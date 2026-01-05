@@ -20,7 +20,7 @@ from typing import Literal, Dict, Any, Optional
 from copy import deepcopy
 from torchmetrics.functional.classification import multiclass_accuracy
 from sklearn.metrics import confusion_matrix
-from transformers import AutoTokenizer, T5ForConditionalGeneration, get_cosine_schedule_with_warmup
+from transformers import AutoTokenizer, T5ForConditionalGeneration, get_cosine_with_min_lr_schedule_with_warmup_lr_rate
 from transformers.modeling_outputs import BaseModelOutput
 
 from .modules import PromptEmbedder, EEGEncoder, Aligner
@@ -238,9 +238,10 @@ class GLIM_CLS(L.LightningModule):
             encoder_params.extend(list(self.aligner.parameters()))
         
         # Use lower learning rate for encoder (fine-tuning) and higher for classifier
+        # WARNING: IF YOU WANT
         param_groups = []
         if encoder_params:
-            param_groups.append({'params': encoder_params, 'lr': self.lr * 0.1})
+            param_groups.append({'params': encoder_params, 'lr': self.lr})
         param_groups.append({'params': classifier_params, 'lr': self.lr})
         
         optimizer = torch.optim.Adam(param_groups)
@@ -249,10 +250,11 @@ class GLIM_CLS(L.LightningModule):
         # Calculate total training steps
         total_steps = self.trainer.estimated_stepping_batches
         
-        scheduler = get_cosine_schedule_with_warmup(
+        scheduler = get_cosine_with_min_lr_schedule_with_warmup_lr_rate(
             optimizer,
             num_warmup_steps=self.warmup_steps,
             num_training_steps=total_steps,
+            min_lr=self.min_lr
         )
         
         return {
