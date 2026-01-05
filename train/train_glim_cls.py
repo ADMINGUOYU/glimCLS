@@ -31,8 +31,8 @@ from data.datamodule import GLIMDataModule
 from model.glim_cls import GLIM_CLS
 
 
-class TeeLogger:
-    """Logger that writes to both stdout/stderr and a file.
+class TeeLogger: 
+    """Logger that writes to both stdout/stderr and a file. 
     
     Automatically closes the file on program exit.
     """
@@ -41,7 +41,7 @@ class TeeLogger:
     def __init__(self, filename, stream):
         self.terminal = stream
         self.log = open(filename, 'w')
-        TeeLogger._instances.append(self)
+        TeeLogger._instances. append(self)
     
     def write(self, message):
         self.terminal.write(message)
@@ -52,8 +52,12 @@ class TeeLogger:
         self.terminal.flush()
         self.log.flush()
     
+    def isatty(self):
+        """Return whether the terminal stream is a TTY."""
+        return hasattr(self.terminal, 'isatty') and self.terminal.isatty()
+    
     def close(self):
-        if self.log and not self.log.closed:
+        if self. log and not self.log. closed:
             self.log.close()
     
     @classmethod
