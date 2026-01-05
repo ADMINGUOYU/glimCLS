@@ -240,7 +240,7 @@ def parse_args():
         '--lr',
         type=float,
         default=1e-4,
-        help='Maximum learning rate (classifier uses this, encoder uses 10x lower)'
+        help='Maximum learning rate'
     )
     parser.add_argument(
         '--min_lr',
@@ -513,7 +513,7 @@ def main():
     if args.freeze_encoder:
         print(f"  Encoder: FROZEN (only training MLP classifier)")
     else:
-        print(f"  Encoder: TRAINABLE (fine-tuning with 10x lower LR)")
+        print(f"  Encoder: TRAINABLE")
     
     # Set up TensorBoard logger (inside tensorboard/ subdirectory)
     logger = TensorBoardLogger(
