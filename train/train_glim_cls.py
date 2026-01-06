@@ -280,8 +280,9 @@ def parse_args():
     parser.add_argument(
         '--device',
         type=int,
-        default=0,
-        help='GPU Index'
+        nargs='+',
+        default=[0],
+        help='GPU Index [list]'
     )
     parser.add_argument(
         '--precision',
@@ -554,7 +555,7 @@ def main():
     
     print("\nInitializing trainer...")
     if torch.cuda.is_available():
-        device = [args.device]
+        device = args.device
     else:
         device = 'auto'
     
@@ -567,7 +568,8 @@ def main():
         callbacks=callbacks,
         log_every_n_steps=10,
         val_check_interval=1.0,
-        deterministic=True
+        deterministic=True,
+        use_distributed_sampler=False
     )
     
     trainer.logger.log_hyperparams(vars(args))
