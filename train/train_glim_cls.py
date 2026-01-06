@@ -459,7 +459,8 @@ def main():
         bsz_val=args.val_batch_size,
         bsz_test=args.val_batch_size,
         num_workers=args.num_workers,
-        use_weighted_sampler=True
+        use_weighted_sampler=True,
+        classification_label_key=args.classification_label_key
     )
     print("Weighted sampling enabled to handle class imbalance")
     

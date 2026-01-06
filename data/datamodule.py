@@ -17,8 +17,8 @@ MAX_KEYWORDS = 3  # Number of top keywords to extract per sentence
 CLS_LABEL = 'topic_label'
 
 class GLIMDataModule(pl.LightningDataModule):
-    
-    def __init__(self, 
+
+    def __init__(self,
                  data_path: os.PathLike,
                  embeddings_path: os.PathLike = None,
                  eval_noise_input: bool = False,
@@ -28,6 +28,7 @@ class GLIMDataModule(pl.LightningDataModule):
                  test_set_key: Literal['test', 'train', 'val'] = 'test',
                  num_workers: int = 0,
                  use_weighted_sampler: bool = False,
+                 classification_label_key: str = None,
                  ):
         super().__init__()
         assert os.path.exists(data_path)
@@ -35,11 +36,12 @@ class GLIMDataModule(pl.LightningDataModule):
         self.embeddings_path = embeddings_path
         self.eval_noise_input = eval_noise_input
         self.bsz_train = bsz_train
-        self.bsz_val = bsz_val  
+        self.bsz_val = bsz_val
         self.bsz_test = bsz_test
         self.test_set_key = test_set_key
         self.num_workers = num_workers
         self.use_weighted_sampler = use_weighted_sampler
+        self.classification_label_key = classification_label_key if classification_label_key else CLS_LABEL
 
     def prepare_data(self) -> None:
         return super().prepare_data()
@@ -72,17 +74,17 @@ class GLIMDataModule(pl.LightningDataModule):
         if self.use_weighted_sampler:
             # Create weighted sampler based on classification labels
             train_sampler = WeightedGLIMSampler(
-                self.train_set, 
+                self.train_set,
                 self.train_set.data['text uid'],
-                self.train_set.data[CLS_LABEL],
-                'train', 
+                self.train_set.data[self.classification_label_key],
+                'train',
                 self.bsz_train
             )
         else:
             train_sampler = GLIMSampler(
-                self.train_set, 
+                self.train_set,
                 self.train_set.data['text uid'],
-                'train', 
+                'train',
                 self.bsz_train
             )
         train_loader = DataLoader(self.train_set,
