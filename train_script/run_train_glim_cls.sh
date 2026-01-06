@@ -24,11 +24,11 @@ TASK_TYPE="sentiment"
 if [ "$TASK_TYPE" = "sentiment" ]; then
     CLASSIFICATION_LABEL_KEY="sentiment label"
     CLASSIFICATION_LABELS=("non_neutral" "neutral")
-    DATA_PATH="/nfs/usrhome2/yguoco/glim_cls/tmp/zuco_merged_with_variants.df"
+    DATA_PATH="data/zuco_preprocessed_dataframe/zuco_merged_with_variants.df"
 elif [ "$TASK_TYPE" = "topic" ]; then
     CLASSIFICATION_LABEL_KEY="topic_label"
     CLASSIFICATION_LABELS=("Biographies and Factual Knowledge" "Movie Reviews and Sentiment")
-    DATA_PATH="/nfs/usrhome2/yguoco/glim_cls/tmp/zuco_merged_with_variants.df"
+    DATA_PATH="data/zuco_preprocessed_dataframe/zuco_merged_with_variants.df"
 else
     echo "Error: TASK_TYPE must be 'sentiment' or 'topic'"
     exit 1

@@ -7,6 +7,8 @@ zuco_data/
 *.hdf5
 *.mat
 
+data/zuco_preprocessed_dataframe/
+
 # Python
 __pycache__/
 *.py[cod]
@@ -51,7 +53,7 @@ tensorboard/
 *.ckpt
 *.pt
 *.safetensors
-
+.claude/
 # Temporary files
 tmp/
 temp/
