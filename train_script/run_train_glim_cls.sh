@@ -23,12 +23,12 @@ TASK_TYPE="sentiment"
 # Task-specific configuration
 if [ "$TASK_TYPE" = "sentiment" ]; then
     CLASSIFICATION_LABEL_KEY="sentiment label"
-    CLASSIFICATION_LABELS="non_neutral neutral"
+    CLASSIFICATION_LABELS=("non_neutral" "neutral")
     DATA_PATH="/nfs/usrhome2/yguoco/glim_cls/tmp/zuco_merged_with_variants.df"
 elif [ "$TASK_TYPE" = "topic" ]; then
     CLASSIFICATION_LABEL_KEY="topic_label"
-    CLASSIFICATION_LABELS="Biographies and Factual Knowledge" "Movie Reviews and Sentiment"
-    DATA_PATH="/nfs/usrhome2/yguoco/glim_cls/tmp/zuco_merged_with_topic.df"
+    CLASSIFICATION_LABELS=("Biographies and Factual Knowledge" "Movie Reviews and Sentiment")
+    DATA_PATH="/nfs/usrhome2/yguoco/glim_cls/tmp/zuco_merged_with_variants.df"
 else
     echo "Error: TASK_TYPE must be 'sentiment' or 'topic'"
     exit 1
@@ -42,27 +42,27 @@ N_IN_BLOCKS=6
 N_OUT_BLOCKS=6
 NUM_HEADS=8
 ENCODER_DROPOUT=0.1
-MLP_HIDDEN_DIMS="512 256"
+MLP_HIDDEN_DIMS="512 256 128"
 MLP_DROPOUT=0.3
 
 # Loss Weights
 CLIP_LOSS_WEIGHT=0.5
 LM_LOSS_WEIGHT=0.5
-COMMITMENT_LOSS_WEIGHT=0.5
-MLP_LOSS_WEIGHT=0.5
+COMMITMENT_LOSS_WEIGHT=0.7
+MLP_LOSS_WEIGHT=0.3
 
 # Training
-BATCH_SIZE=24
+BATCH_SIZE=72
 VAL_BATCH_SIZE=24
 MAX_EPOCHS=50
-LR=1e-4
-MIN_LR=1e-6
-WARMUP_EPOCHS=0
+LR=2e-4
+MIN_LR=1e-5
+WARMUP_EPOCHS=15
 SEED=42
 
 # Hardware
 ACCELERATOR="auto"
-DEVICE=0
+DEVICE=3
 PRECISION="bf16-mixed"
 NUM_WORKERS=4
 
@@ -76,7 +76,7 @@ echo "=========================================="
 echo "Training Configuration:"
 echo "  Task Type: $TASK_TYPE"
 echo "  Label Key: $CLASSIFICATION_LABEL_KEY"
-echo "  Labels: $CLASSIFICATION_LABELS"
+echo "  Labels: "${CLASSIFICATION_LABELS[@]}""
 echo "  Data Path: $DATA_PATH"
 echo "=========================================="
 echo
@@ -84,7 +84,7 @@ echo
 python -m train.train_glim_cls \
     --data_path "$DATA_PATH" \
     --classification_label_key "$CLASSIFICATION_LABEL_KEY" \
-    --classification_labels $CLASSIFICATION_LABELS \
+    --classification_labels "${CLASSIFICATION_LABELS[@]}"  \
     --text_model "$TEXT_MODEL" \
     --hidden_dim $HIDDEN_DIM \
     --embed_dim $EMBED_DIM \
