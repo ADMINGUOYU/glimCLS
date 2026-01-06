@@ -122,7 +122,10 @@ class GLIM_CLS(L.LightningModule):
                  warmup_epochs: int = 0,
                  ):
         super().__init__()
-        
+
+        # No strict loading (we don't want to save & load text_model checkpoints)
+        self.strict_loading = False 
+
         # Set default values for mutable arguments
         if classification_labels is None:
             classification_labels = ['negative', 'neutral', 'positive']
