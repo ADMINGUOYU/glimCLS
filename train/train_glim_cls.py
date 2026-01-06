@@ -13,6 +13,7 @@ import os
 import sys
 import atexit
 import argparse
+import shutil
 from pathlib import Path
 from datetime import datetime
 from collections import Counter
@@ -24,7 +25,7 @@ from lightning.pytorch.callbacks import (
     ModelCheckpoint,
     EarlyStopping,
     LearningRateMonitor,
-    RichProgressBar
+    TQDMProgressBar
 )
 
 from data.datamodule import GLIMDataModule
@@ -422,7 +423,14 @@ def main():
     
     Path(tensorboard_dir).mkdir(parents=True, exist_ok=True)
     Path(checkpoint_dir).mkdir(parents=True, exist_ok=True)
-    
+
+    # Save the bash script for reproducibility
+    bash_script_path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                                    'train_script', 'run_train_glim_cls.sh')
+    if os.path.exists(bash_script_path):
+        shutil.copy2(bash_script_path, os.path.join(run_dir, 'run_train_glim_cls.sh'))
+        print(f"Saved training script to: {os.path.join(run_dir, 'run_train_glim_cls.sh')}")
+
     # Set up file logging using TeeLogger (defined at module level)
     sys.stdout = TeeLogger(log_file, sys.stdout)
     sys.stderr = TeeLogger(log_file.replace('.log', '_error.log'), sys.stderr)
@@ -531,15 +539,17 @@ def main():
     callbacks = [
         ModelCheckpoint(
             dirpath=checkpoint_dir,
-            filename='model-{epoch:02d}-{val/accuracy:.4f}',
+            filename='model-epoch{epoch:02d}-acc{val/accuracy:.4f}',
             monitor='val/accuracy',
             mode='max',
             save_top_k=3,
             save_last=True,
-            verbose=True
+            verbose=True,
+            enable_version_counter=False,
+            auto_insert_metric_name=False
         ),
         LearningRateMonitor(logging_interval='step'),
-        RichProgressBar()
+        TQDMProgressBar(refresh_rate=10)
     ]
     
     if args.early_stopping:
