@@ -41,7 +41,7 @@ class GLIMDataModule(pl.LightningDataModule):
         self.test_set_key = test_set_key
         self.num_workers = num_workers
         self.use_weighted_sampler = use_weighted_sampler
-        self.classification_label_key = classification_label_key if classification_label_key else CLS_LABEL
+        self.classification_label_key = classification_label_key if (classification_label_key is not None) else CLS_LABEL
 
     def prepare_data(self) -> None:
         return super().prepare_data()
@@ -62,11 +62,11 @@ class GLIMDataModule(pl.LightningDataModule):
             print(f'[Rank {local_rank}] Loaded embeddings from {self.embeddings_path}')
         
         if stage == "fit":
-            self.train_set = ZuCoDataset(df, 'train', embeddings_dict=embeddings_dict)
-            self.val_set = ZuCoDataset(df, 'val', embeddings_dict=embeddings_dict, eval_noise_input=self.eval_noise_input)
+            self.train_set = ZuCoDataset(df, 'train', embeddings_dict=embeddings_dict, classification_label_key=self.classification_label_key)
+            self.val_set = ZuCoDataset(df, 'val', embeddings_dict=embeddings_dict, eval_noise_input=self.eval_noise_input, classification_label_key=self.classification_label_key)
             self.n_target_text = self.val_set.n_target_text
         elif stage == "test":
-            self.test_set = ZuCoDataset(df, 'test', embeddings_dict=embeddings_dict, eval_noise_input=self.eval_noise_input)
+            self.test_set = ZuCoDataset(df, 'test', embeddings_dict=embeddings_dict, eval_noise_input=self.eval_noise_input, classification_label_key=self.classification_label_key)
             self.n_target_text = self.test_set.n_target_text
         print(f'[Rank {local_rank}][{self.__class__.__name__}] running `setup()`...Done!','\U0001F60B'*3)
             
@@ -367,7 +367,12 @@ class ZuCoDataset(Dataset):
                  phase: Literal['train', 'val', 'test'],
                  embeddings_dict: dict = None,
                  eval_noise_input: bool = False,
+                 classification_label_key: str = None
                  ):
+
+        # classification label to yield
+        self.classification_label_key = classification_label_key if (classification_label_key is not None) else CLS_LABEL
+
         # pt_target_keys = ['input text']
         pt_target_keys = ['lexical simplification (v0)', 'lexical simplification (v1)', 
                           'semantic clarity (v0)', 'semantic clarity (v1)', 
@@ -418,7 +423,7 @@ class ZuCoDataset(Dataset):
         prompt = list(zip(t_prompts, d_prompts, s_prompts))
         text_uid = df['text uid'].values.tolist()
 
-        classification_labels  = df[CLS_LABEL].values.tolist()
+        classification_labels  = df[self.classification_label_key].values.tolist()
         eeg = df['eeg'].tolist()
         mask = df['mask'].tolist()
         
@@ -453,7 +458,7 @@ class ZuCoDataset(Dataset):
                 'text uid': text_uid,         # list[int]
                 'input text': input_text,     # str
                 'target text': target_text,   # str
-                CLS_LABEL: classification_labels,                           # str
+                self.classification_label_key : classification_labels,      # str
                 'raw task key': raw_t_keys,                                 # str
                 'raw input text': raw_input_text,                           # str
                 }
@@ -477,10 +482,10 @@ class ZuCoDataset(Dataset):
                 'text uid': self.data['text uid'][idx],         # int
                 'input text': self.data['input text'][idx],     # str
                 'target text': self.data['target text'][idx],   # str
-                CLS_LABEL: self.data[CLS_LABEL][idx],           # str
-                'raw task key': self.data['raw task key'][idx],         # str
-                'raw input text': self.data['raw input text'][idx],     # str
-                'all target texts': self.data['all target texts'][idx],   # tuple(str)
+                self.classification_label_key : self.data[self.classification_label_key][idx],   # str
+                'raw task key': self.data['raw task key'][idx],                                  # str
+                'raw input text': self.data['raw input text'][idx],                              # str
+                'all target texts': self.data['all target texts'][idx],                          # tuple(str)
                 }
         
         # Add embeddings if available
