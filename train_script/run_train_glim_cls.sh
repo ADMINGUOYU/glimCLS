@@ -62,7 +62,7 @@ SEED=42
 
 # Hardware
 ACCELERATOR="auto"
-DEVICE=3
+DEVICE=0
 PRECISION="bf16-mixed"
 NUM_WORKERS=4
 
