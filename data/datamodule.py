@@ -13,6 +13,8 @@ from torch.utils.data import Dataset, DataLoader, DistributedSampler
 SBERT_EMBEDDING_DIM = 768  # Dimension of SBERT (all-mpnet-base-v2) embeddings
 MAX_KEYWORDS = 3  # Number of top keywords to extract per sentence
 
+# classification label
+CLS_LABEL = 'topic_label'
 
 class GLIMDataModule(pl.LightningDataModule):
     
@@ -68,11 +70,11 @@ class GLIMDataModule(pl.LightningDataModule):
             
     def train_dataloader(self):
         if self.use_weighted_sampler:
-            # Create weighted sampler based on sentiment labels
+            # Create weighted sampler based on classification labels
             train_sampler = WeightedGLIMSampler(
                 self.train_set, 
                 self.train_set.data['text uid'],
-                self.train_set.data['sentiment label'],
+                self.train_set.data[CLS_LABEL],
                 'train', 
                 self.bsz_train
             )
@@ -273,13 +275,13 @@ class GLIMSampler(DistributedSampler):
 
 class WeightedGLIMSampler(GLIMSampler):
     '''
-    A weighted batch sampler for train GLIM that applies class balancing based on sentiment labels.
+    A weighted batch sampler for train GLIM that applies class balancing based on classification labels.
     Extends GLIMSampler to maintain the text-based sampling while applying weights for class imbalance.
     '''
     def __init__(self, 
                  dataset: Dataset, 
                  identifiers: list,
-                 sentiment_labels: list,
+                 classification_labels: list,
                  phase: Literal['train', 'val', 'test'],
                  batch_size: int,
                  num_replicas = None,
@@ -287,36 +289,36 @@ class WeightedGLIMSampler(GLIMSampler):
                  ) -> None:
         super().__init__(dataset, identifiers, phase, batch_size, num_replicas, rank)
         
-        # Compute sample weights based on sentiment labels
-        self.sample_weights = self._compute_sample_weights(sentiment_labels)
+        # Compute sample weights based on classification labels
+        self.sample_weights = self._compute_sample_weights(classification_labels)
     
-    def _compute_sample_weights(self, sentiment_labels):
+    def _compute_sample_weights(self, classification_labels):
         """
         Compute sample weights for weighted random sampling to handle class imbalance.
         Uses inverse frequency weighting.
         
         Args:
-            sentiment_labels: List of sentiment label strings
+            classification_labels: List of classification label strings
             
         Returns:
             Tensor of sample weights, one per sample
         """
-        # Map sentiment labels to IDs
-        label_to_id = {'negative': 0, 'neutral': 1, 'positive': 2}
-        sentiment_ids = torch.tensor([label_to_id.get(label, 1) for label in sentiment_labels])
+        # Map classification labels to IDs
+        label_to_id = list(set(classification_labels))
+        cls_lbl_ids = torch.tensor([label_to_id.index(label) for label in classification_labels])
         
         # Count samples per class
-        unique_labels, counts = torch.unique(sentiment_ids, return_counts=True)
+        unique_labels, counts = torch.unique(cls_lbl_ids, return_counts=True)
         
         # Compute class weights (inverse frequency)
-        total_samples = len(sentiment_ids)
+        total_samples = len(cls_lbl_ids)
         class_weights = total_samples / (len(unique_labels) * counts.float())
         
         # Create a mapping from label to weight
         label_to_weight = {label.item(): weight.item() for label, weight in zip(unique_labels, class_weights)}
         
         # Assign weight to each sample based on its label
-        sample_weights = torch.tensor([label_to_weight[label.item()] for label in sentiment_ids])
+        sample_weights = torch.tensor([label_to_weight[label.item()] for label in cls_lbl_ids])
         
         return sample_weights
     
@@ -414,7 +416,7 @@ class ZuCoDataset(Dataset):
         prompt = list(zip(t_prompts, d_prompts, s_prompts))
         text_uid = df['text uid'].values.tolist()
 
-        sentiment_label  = df['sentiment label'].values.tolist()
+        classification_labels  = df[CLS_LABEL].values.tolist()
         eeg = df['eeg'].tolist()
         mask = df['mask'].tolist()
         
@@ -449,7 +451,7 @@ class ZuCoDataset(Dataset):
                 'text uid': text_uid,         # list[int]
                 'input text': input_text,     # str
                 'target text': target_text,   # str
-                'sentiment label': sentiment_label,                         # str
+                CLS_LABEL: classification_labels,                           # str
                 'raw task key': raw_t_keys,                                 # str
                 'raw input text': raw_input_text,                           # str
                 }
@@ -473,7 +475,7 @@ class ZuCoDataset(Dataset):
                 'text uid': self.data['text uid'][idx],         # int
                 'input text': self.data['input text'][idx],     # str
                 'target text': self.data['target text'][idx],   # str
-                'sentiment label': self.data['sentiment label'][idx], # str
+                CLS_LABEL: self.data[CLS_LABEL][idx],           # str
                 'raw task key': self.data['raw task key'][idx],         # str
                 'raw input text': self.data['raw input text'][idx],     # str
                 'all target texts': self.data['all target texts'][idx],   # tuple(str)
