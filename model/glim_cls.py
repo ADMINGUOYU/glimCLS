@@ -74,7 +74,7 @@ class GLIM_CLS(L.LightningModule):
         # Optimizer arguments (Cosine LR with warmup only)
         lr: Maximum learning rate (default: 1e-4)
         min_lr: Minimum learning rate (default: 1e-6)
-        warmup_steps: Number of warmup steps (default: 100)
+        warmup_epochs: Number of warmup epochs (default: 0)
     """
 
     SUPPORTED_TEXT_MODELS = Literal["google/flan-t5-xl", "google/flan-t5-large", 
@@ -119,7 +119,7 @@ class GLIM_CLS(L.LightningModule):
                  # Optimizer arguments (Cosine LR with warmup)
                  lr: float = 1e-4,
                  min_lr: float = 1e-6,
-                 warmup_steps: int = 100,
+                 warmup_epochs: int = 0,
                  ):
         super().__init__()
         
@@ -147,7 +147,7 @@ class GLIM_CLS(L.LightningModule):
         # Optimizer parameters
         self.lr = lr
         self.min_lr = min_lr
-        self.warmup_steps = warmup_steps
+        self.warmup_epochs = warmup_epochs
         
         # Classification parameters
         self.classification_label_key = classification_label_key
@@ -231,32 +231,36 @@ class GLIM_CLS(L.LightningModule):
         # Separate parameters for encoder and classifier
         encoder_params = []
         classifier_params = list(self.mlp_classifier.parameters())
-        
+
         if not self.freeze_encoder:
             encoder_params.extend(list(self.p_embedder.parameters()))
             encoder_params.extend(list(self.eeg_encoder.parameters()))
             encoder_params.extend(list(self.aligner.parameters()))
-        
+
         # Use lower learning rate for encoder (fine-tuning) and higher for classifier
         # WARNING: IF YOU WANT
         param_groups = []
         if encoder_params:
             param_groups.append({'params': encoder_params, 'lr': self.lr})
         param_groups.append({'params': classifier_params, 'lr': self.lr})
-        
+
         optimizer = torch.optim.Adam(param_groups)
-        
+
         # Cosine LR scheduler with warmup
-        # Calculate total training steps
+        # Calculate total training steps and warmup steps from epochs
         total_steps = self.trainer.estimated_stepping_batches
-        
+        steps_per_epoch = total_steps / self.trainer.max_epochs
+        warmup_steps = int(self.warmup_epochs * steps_per_epoch)
+
+        print(f"Scheduler config: {warmup_steps} warmup steps ({self.warmup_epochs} epochs × {steps_per_epoch:.1f} steps/epoch)")
+
         scheduler = get_cosine_with_min_lr_schedule_with_warmup_lr_rate(
             optimizer,
-            num_warmup_steps=self.warmup_steps,
+            num_warmup_steps=warmup_steps,
             num_training_steps=total_steps,
             min_lr=self.min_lr
         )
-        
+
         return {
             'optimizer': optimizer,
             'lr_scheduler': {

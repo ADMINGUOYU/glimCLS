@@ -250,10 +250,10 @@ def parse_args():
         help='Minimum learning rate for cosine schedule'
     )
     parser.add_argument(
-        '--warmup_steps',
+        '--warmup_epochs',
         type=int,
-        default=100,
-        help='Number of warmup steps for learning rate scheduler'
+        default=0,
+        help='Number of warmup epochs for learning rate scheduler'
     )
     
     # Logging and checkpoint arguments
@@ -446,7 +446,7 @@ def main():
     print(f"MLP hidden dims: {args.mlp_hidden_dims}")
     print(f"Batch size: {args.batch_size}")
     print(f"Learning rate: {args.lr} (max), {args.min_lr} (min)")
-    print(f"Warmup steps: {args.warmup_steps}")
+    print(f"Warmup epochs: {args.warmup_epochs}")
     print(f"Max epochs: {args.max_epochs}")
     print(f"Freeze encoder: {args.freeze_encoder}")
     print(f"Use Prompt: {not args.do_not_use_prompt}")
@@ -471,9 +471,9 @@ def main():
         classification_label_key=args.classification_label_key
     )
     print("Weighted sampling enabled to handle class imbalance")
-    
+
     display_label_distribution(datamodule, args.classification_label_key, args.classification_labels)
-    
+
     print("\nInitializing GLIM_CLS model...")
     
     if args.checkpoint is not None:
@@ -512,7 +512,7 @@ def main():
             # Optimizer arguments
             lr=args.lr,
             min_lr=args.min_lr,
-            warmup_steps=args.warmup_steps,
+            warmup_epochs=args.warmup_epochs,
         )
     
     print(f"Model created with:")

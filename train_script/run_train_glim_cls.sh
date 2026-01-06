@@ -57,7 +57,7 @@ VAL_BATCH_SIZE=24
 MAX_EPOCHS=50
 LR=1e-4
 MIN_LR=1e-6
-WARMUP_STEPS=0
+WARMUP_EPOCHS=0
 SEED=42
 
 # Hardware
@@ -103,7 +103,7 @@ python -m train.train_glim_cls \
     --max_epochs $MAX_EPOCHS \
     --lr $LR \
     --min_lr $MIN_LR \
-    --warmup_steps $WARMUP_STEPS \
+    --warmup_epochs $WARMUP_EPOCHS \
     --log_dir "$LOG_DIR" \
     --experiment_name "$EXPERIMENT_NAME" \
     --accelerator "$ACCELERATOR" \
