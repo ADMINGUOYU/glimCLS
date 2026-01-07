@@ -6,7 +6,7 @@ import os
 # tmp path (saving path)
 # User can modify this path to save outputs to a different location
 # Default: './tmp' for local storage
-tmp_path = '/nfs/usrhome2/yguoco/glim_cls/tmp'
+tmp_path = './data/zuco_preprocessed_dataframe'
 # Create tmp directory if it doesn't exist
 os.makedirs(tmp_path, exist_ok=True)
 

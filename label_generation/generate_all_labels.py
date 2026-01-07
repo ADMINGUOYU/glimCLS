@@ -96,6 +96,9 @@ keyword_embeddings = kw_embeddings_flat.reshape(num_sentences, 3, 768)
 keywords_df = pd.DataFrame(keywords_list, columns=['keyword_1', 'keyword_2', 'keyword_3'])
 topic_df = pd.DataFrame({'topic_label': topic_labels})
 sentiment_df = pd.DataFrame({'sentiment label' : sentiment_labels})
+# TODO: make sure we don't have duplicated columns
+data.drop(columns=['keyword_1', 'keyword_2', 'keyword_3', 'topic_label', 'sentiment label'], axis=1, errors='ignore', inplace=True)
+# Merge
 data_new = pd.concat([data, keywords_df, topic_df, sentiment_df], axis=1)
 
 #######################################

@@ -7,12 +7,21 @@ from sklearn.model_selection import train_test_split
 # tmp path (saving path)
 # User can modify this path to save outputs to a different location
 # Default: './tmp' for local storage
-tmp_path = '/nfs/usrhome2/yguoco/glim_cls/tmp'
+tmp_path = './data/zuco_preprocessed_dataframe'
 # Create tmp directory if it doesn't exist
 os.makedirs(tmp_path, exist_ok=True)
 
 # select specific subjects (None for all subjects)
 select_subjs = None # ['ZAB']
+
+# merged labels
+MERGED_LABELS = ['input text', 
+                 'topic_label',
+                 'sentiment label', 
+                 'text uid', 
+                 'keyword_1', 'keyword_2', 'keyword_3', 
+                 'dataset', 
+                 'task']
 
 # Configuration constants
 TARGET_KEYS = [
@@ -86,7 +95,7 @@ df_eeg['text'] = df_eeg['text'].apply(revise_typo)
 # Merge the dataframes on 'text', 'dataset', 'task', and 'subject'
 # The EEG data uses 'text' column, while labels use 'input text'
 df_merged = pd.merge(df_eeg, 
-                     df_labels[['input text', 'sentiment label', 'text uid', 'keyword_1', 'keyword_2', 'keyword_3', 'dataset', 'task']], 
+                     df_labels[MERGED_LABELS], 
                      left_on=['text', 'dataset', 'task'], 
                      right_on=['input text', 'dataset', 'task'], 
                      how='inner')
