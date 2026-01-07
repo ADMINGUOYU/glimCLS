@@ -32,6 +32,8 @@ SEED=42
 # Training
 MAX_EPOCHS=10
 LR=1e-4
+MIN_LR=1e-6
+WARMUP_EPOCHS=0
 WEIGHT_DECAY=0.01
 
 # Hardware
@@ -51,7 +53,8 @@ echo "  LoRA Rank: $LORA_RANK"
 echo "  Data Size: $DATA_SIZE"
 echo "  Batch Size: $BATCH_SIZE"
 echo "  Max Epochs: $MAX_EPOCHS"
-echo "  Learning Rate: $LR"
+echo "  Learning Rate: $LR (max), $MIN_LR (min)"
+echo "  Warmup Epochs: $WARMUP_EPOCHS"
 echo "  Weight Decay: $WEIGHT_DECAY"
 echo "  Device: $DEVICE"
 if [ -n "$LABEL_EMBED_INIT" ]; then
@@ -68,6 +71,8 @@ CMD="python -m train.train_stage2 \
     --batch_size $BATCH_SIZE \
     --max_epochs $MAX_EPOCHS \
     --lr $LR \
+    --min_lr $MIN_LR \
+    --warmup_epochs $WARMUP_EPOCHS \
     --weight_decay $WEIGHT_DECAY \
     --text_model \"$TEXT_MODEL\" \
     --freeze_strategy \"$FREEZE_STRATEGY\" \

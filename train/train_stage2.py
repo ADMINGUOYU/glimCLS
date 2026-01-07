@@ -8,6 +8,7 @@ import math
 from datetime import datetime
 from pathlib import Path
 from torch.optim import AdamW
+from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
@@ -107,7 +108,19 @@ def parse_args():
         '--lr',
         type=float,
         default=1e-4,
-        help='Learning rate'
+        help='Maximum learning rate'
+    )
+    parser.add_argument(
+        '--min_lr',
+        type=float,
+        default=1e-6,
+        help='Minimum learning rate for cosine schedule'
+    )
+    parser.add_argument(
+        '--warmup_epochs',
+        type=int,
+        default=0,
+        help='Number of warmup epochs for learning rate scheduler'
     )
     parser.add_argument(
         '--weight_decay',
@@ -147,7 +160,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def train_epoch(model, train_loader, optimizer, device, epoch):
+def train_epoch(model, train_loader, optimizer, scheduler, device, epoch):
     """Train for one epoch."""
     model.train()
     total_loss = 0
@@ -169,6 +182,7 @@ def train_epoch(model, train_loader, optimizer, device, epoch):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        scheduler.step()
 
         # Update metrics
         total_loss += loss.item()
@@ -286,6 +300,13 @@ def main():
     Path(tensorboard_dir).mkdir(parents=True, exist_ok=True)
     Path(checkpoint_dir).mkdir(parents=True, exist_ok=True)
 
+    # Save the bash script for reproducibility
+    bash_script_path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                                    'train_script', 'run_stage2.sh')
+    if os.path.exists(bash_script_path):
+        shutil.copy2(bash_script_path, os.path.join(run_dir, 'run_stage2.sh'))
+        print(f"Saved training script to: {os.path.join(run_dir, 'run_stage2.sh')}")
+
     # Initialize TensorBoard writer
     writer = SummaryWriter(log_dir=tensorboard_dir)
 
@@ -304,7 +325,8 @@ def main():
     print(f"Freeze strategy: {args.freeze_strategy}")
     print(f"LoRA rank: {args.lora_rank}")
     print(f"Max epochs: {args.max_epochs}")
-    print(f"Learning rate: {args.lr}")
+    print(f"Learning rate: {args.lr} (max), {args.min_lr} (min)")
+    print(f"Warmup epochs: {args.warmup_epochs}")
     print(f"Device: {args.device}")
     print("=" * 80)
 
@@ -350,6 +372,38 @@ def main():
         weight_decay=args.weight_decay
     )
 
+    # Create learning rate scheduler with warmup
+    total_steps = args.max_epochs * len(train_loader)
+    warmup_steps = args.warmup_epochs * len(train_loader)
+
+    if args.warmup_epochs > 0:
+        # Linear warmup followed by cosine annealing
+        warmup_scheduler = LinearLR(
+            optimizer,
+            start_factor=1e-6 / args.lr,
+            end_factor=1.0,
+            total_iters=warmup_steps
+        )
+        cosine_scheduler = CosineAnnealingLR(
+            optimizer,
+            T_max=total_steps - warmup_steps,
+            eta_min=args.min_lr
+        )
+        scheduler = SequentialLR(
+            optimizer,
+            schedulers=[warmup_scheduler, cosine_scheduler],
+            milestones=[warmup_steps]
+        )
+        print(f"\nLR Scheduler: Linear warmup ({args.warmup_epochs} epochs) + Cosine annealing")
+    else:
+        # Just cosine annealing without warmup
+        scheduler = CosineAnnealingLR(
+            optimizer,
+            T_max=total_steps,
+            eta_min=args.min_lr
+        )
+        print(f"\nLR Scheduler: Cosine annealing (no warmup)")
+
     # Log hyperparameters to TensorBoard
     writer.add_text('config/args', str(vars(args)))
 
@@ -366,7 +420,7 @@ def main():
         print("-" * 80)
 
         # Train
-        train_loss, train_ppl = train_epoch(model, train_loader, optimizer, args.device, epoch)
+        train_loss, train_ppl = train_epoch(model, train_loader, optimizer, scheduler, args.device, epoch)
         current_lr = optimizer.param_groups[0]['lr']
         print(f"Train Loss: {train_loss:.4f} | Train Perplexity: {train_ppl:.2f} | LR: {current_lr:.2e}")
 
