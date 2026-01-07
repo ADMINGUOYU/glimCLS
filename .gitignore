@@ -58,3 +58,7 @@ tensorboard/
 tmp/
 temp/
 *.tmp
+
+# Path to symbolic links
+/datasets
+/data/zuco_preprocessed_dataframe
