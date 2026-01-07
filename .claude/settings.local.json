@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python -m train.train_glim_cls:*)"
+      "Bash(python -m train.train_glim_cls:*)",
+      "Bash(ls:*)",
+      "Bash(python3:*)"
     ]
   }
 }

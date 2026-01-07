@@ -29,6 +29,8 @@ class GLIMDataModule(pl.LightningDataModule):
                  num_workers: int = 0,
                  use_weighted_sampler: bool = False,
                  classification_label_key: str = None,
+                 classification_label_keys: list = None,
+                 regression_label_keys: list = None,
                  ):
         super().__init__()
         assert os.path.exists(data_path)
@@ -41,7 +43,19 @@ class GLIMDataModule(pl.LightningDataModule):
         self.test_set_key = test_set_key
         self.num_workers = num_workers
         self.use_weighted_sampler = use_weighted_sampler
-        self.classification_label_key = classification_label_key if (classification_label_key is not None) else CLS_LABEL
+
+        # Handle both single and multi-task modes
+        if classification_label_keys is not None:
+            self.classification_label_keys = classification_label_keys
+        elif classification_label_key is not None:
+            self.classification_label_keys = [classification_label_key]
+        else:
+            self.classification_label_keys = [CLS_LABEL]
+
+        # For backward compatibility
+        self.classification_label_key = self.classification_label_keys[0]
+
+        self.regression_label_keys = regression_label_keys or []
 
     def prepare_data(self) -> None:
         return super().prepare_data()
@@ -62,11 +76,11 @@ class GLIMDataModule(pl.LightningDataModule):
             print(f'[Rank {local_rank}] Loaded embeddings from {self.embeddings_path}')
         
         if stage == "fit":
-            self.train_set = ZuCoDataset(df, 'train', embeddings_dict=embeddings_dict, classification_label_key=self.classification_label_key)
-            self.val_set = ZuCoDataset(df, 'val', embeddings_dict=embeddings_dict, eval_noise_input=self.eval_noise_input, classification_label_key=self.classification_label_key)
+            self.train_set = ZuCoDataset(df, 'train', embeddings_dict=embeddings_dict, classification_label_keys=self.classification_label_keys, regression_label_keys=self.regression_label_keys)
+            self.val_set = ZuCoDataset(df, 'val', embeddings_dict=embeddings_dict, eval_noise_input=self.eval_noise_input, classification_label_keys=self.classification_label_keys, regression_label_keys=self.regression_label_keys)
             self.n_target_text = self.val_set.n_target_text
         elif stage == "test":
-            self.test_set = ZuCoDataset(df, 'test', embeddings_dict=embeddings_dict, eval_noise_input=self.eval_noise_input, classification_label_key=self.classification_label_key)
+            self.test_set = ZuCoDataset(df, 'test', embeddings_dict=embeddings_dict, eval_noise_input=self.eval_noise_input, classification_label_keys=self.classification_label_keys, regression_label_keys=self.regression_label_keys)
             self.n_target_text = self.test_set.n_target_text
         print(f'[Rank {local_rank}][{self.__class__.__name__}] running `setup()`...Done!','\U0001F60B'*3)
             
@@ -362,16 +376,28 @@ class WeightedGLIMSampler(GLIMSampler):
 
 class ZuCoDataset(Dataset):
 
-    def __init__(self, 
+    def __init__(self,
                  df: pd.DataFrame,
                  phase: Literal['train', 'val', 'test'],
                  embeddings_dict: dict = None,
                  eval_noise_input: bool = False,
-                 classification_label_key: str = None
+                 classification_label_key: str = None,
+                 classification_label_keys: list = None,
+                 regression_label_keys: list = None
                  ):
 
-        # classification label to yield
-        self.classification_label_key = classification_label_key if (classification_label_key is not None) else CLS_LABEL
+        # Handle both single and multi-task modes
+        if classification_label_keys is not None:
+            self.classification_label_keys = classification_label_keys
+        elif classification_label_key is not None:
+            self.classification_label_keys = [classification_label_key]
+        else:
+            self.classification_label_keys = [CLS_LABEL]
+
+        # For backward compatibility
+        self.classification_label_key = self.classification_label_keys[0]
+
+        self.regression_label_keys = regression_label_keys or []
 
         # pt_target_keys = ['input text']
         pt_target_keys = ['lexical simplification (v0)', 'lexical simplification (v1)', 
@@ -423,10 +449,9 @@ class ZuCoDataset(Dataset):
         prompt = list(zip(t_prompts, d_prompts, s_prompts))
         text_uid = df['text uid'].values.tolist()
 
-        classification_labels  = df[self.classification_label_key].values.tolist()
         eeg = df['eeg'].tolist()
         mask = df['mask'].tolist()
-        
+
         # Load embeddings if available
         sentence_embeddings = []
         keyword_embeddings = []
@@ -445,23 +470,30 @@ class ZuCoDataset(Dataset):
                     )
                     sentence_embeddings.append(np.zeros(SBERT_EMBEDDING_DIM, dtype=np.float32))
                     keyword_embeddings.append(np.zeros((MAX_KEYWORDS, SBERT_EMBEDDING_DIM), dtype=np.float32))
-            
+
             # Get keyword texts from dataframe
             if 'keyword_1' in df.columns:
-                keyword_texts = list(zip(df['keyword_1'].tolist(), 
-                                        df['keyword_2'].tolist(), 
+                keyword_texts = list(zip(df['keyword_1'].tolist(),
+                                        df['keyword_2'].tolist(),
                                         df['keyword_3'].tolist()))
-        
+
         result = {'eeg': eeg,                   # list[np.arrary], [(l, c),]
                 'mask': mask,                 # list[np.arrary], [(l),], 1 for unmasked; 0 for masked
                 'prompt': prompt,             # list[tuple[str]], [('task', 'dataset', 'subject')]
                 'text uid': text_uid,         # list[int]
                 'input text': input_text,     # str
                 'target text': target_text,   # str
-                self.classification_label_key : classification_labels,      # str
                 'raw task key': raw_t_keys,                                 # str
                 'raw input text': raw_input_text,                           # str
                 }
+
+        # Add classification labels
+        for label_key in self.classification_label_keys:
+            result[label_key] = df[label_key].values.tolist()
+
+        # Add regression labels
+        for label_key in self.regression_label_keys:
+            result[label_key] = df[label_key].values.tolist()
         
         # Add embeddings if available
         if embeddings_dict is not None:
@@ -482,12 +514,19 @@ class ZuCoDataset(Dataset):
                 'text uid': self.data['text uid'][idx],         # int
                 'input text': self.data['input text'][idx],     # str
                 'target text': self.data['target text'][idx],   # str
-                self.classification_label_key : self.data[self.classification_label_key][idx],   # str
                 'raw task key': self.data['raw task key'][idx],                                  # str
                 'raw input text': self.data['raw input text'][idx],                              # str
                 'all target texts': self.data['all target texts'][idx],                          # tuple(str)
                 }
-        
+
+        # Add classification labels
+        for label_key in self.classification_label_keys:
+            item[label_key] = self.data[label_key][idx]
+
+        # Add regression labels
+        for label_key in self.regression_label_keys:
+            item[label_key] = self.data[label_key][idx]
+
         # Add embeddings if available
         if 'sentence_embedding' in self.data:
             item['sentence_embedding'] = torch.from_numpy(self.data['sentence_embedding'][idx])  # tensor, float32, (768,)
@@ -495,7 +534,7 @@ class ZuCoDataset(Dataset):
             item['keyword_embedding'] = torch.from_numpy(self.data['keyword_embedding'][idx])    # tensor, float32, (3, 768)
         if 'keyword_text' in self.data:
             item['keyword_text'] = self.data['keyword_text'][idx]  # tuple[str], (kw1, kw2, kw3)
-        
+
         return item
 
 
