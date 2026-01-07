@@ -66,6 +66,13 @@ DEVICE=(0)
 PRECISION="bf16-mixed"
 NUM_WORKERS=4
 
+# # Hardware (Modified for 4 GPUs)
+# ACCELERATOR="gpu"          # 明确指定为 gpu
+# DEVICE=(0 1 2 3)           # 修改为4张卡的ID
+# PRECISION="bf16-mixed"
+# NUM_WORKERS=4              # 注意：这是每个进程(每张卡)的worker数
+
+
 # Logging
 LOG_DIR="./logs"
 EXPERIMENT_NAME="glim_cls_${TASK_TYPE}"
