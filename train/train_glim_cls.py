@@ -635,7 +635,7 @@ def main():
         log_every_n_steps=10,
         val_check_interval=1.0,
         deterministic=True,
-        use_distributed_sampler=(strategy != 'auto' and strategy is not None)
+        use_distributed_sampler=False # we already have a distributed sampler
     )
     
     trainer.logger.log_hyperparams(vars(args))
