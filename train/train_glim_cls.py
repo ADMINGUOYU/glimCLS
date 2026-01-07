@@ -1,12 +1,13 @@
 """
 Training script for GLIM_CLS model.
 
-This script trains the combined GLIM encoder + MLP classifier model with:
+This script trains the combined GLIM encoder + MLP classifier model with: 
 1. Configurable classification labels and label keys
 2. Cosine LR scheduler with warmup
 3. Support for loading from checkpoint
 4. bfloat16 precision for T5 model
 5. weighted sampling is used by default
+6. Distributed training support (DDP)
 """
 
 import os
@@ -19,6 +20,7 @@ from datetime import datetime
 from collections import Counter
 
 import torch
+import torch.distributed as dist
 import lightning as L
 from lightning.pytorch.loggers import TensorBoardLogger
 from lightning.pytorch.callbacks import (
@@ -32,6 +34,15 @@ from data.datamodule import GLIMDataModule
 from model.glim_cls import GLIM_CLS
 
 
+def is_main_process():
+    """Check if this is the main process (rank 0) in distributed training."""
+    if dist.is_available() and dist.is_initialized():
+        return dist.get_rank() == 0
+    # Check environment variables for distributed training
+    rank = int(os.environ.get('LOCAL_RANK', os.environ.get('RANK', 0)))
+    return rank == 0
+
+
 class TeeLogger: 
     """Logger that writes to both stdout/stderr and a file. 
     
@@ -42,7 +53,7 @@ class TeeLogger:
     def __init__(self, filename, stream):
         self.terminal = stream
         self.log = open(filename, 'w')
-        TeeLogger._instances. append(self)
+        TeeLogger._instances.append(self)
     
     def write(self, message):
         self.terminal.write(message)
@@ -58,7 +69,7 @@ class TeeLogger:
         return hasattr(self.terminal, 'isatty') and self.terminal.isatty()
     
     def close(self):
-        if self. log and not self.log. closed:
+        if self.log and not self.log.closed:
             self.log.close()
     
     @classmethod
@@ -95,7 +106,7 @@ def parse_args():
     parser.add_argument(
         '--data_path',
         type=str,
-        default='./data/tmp/zuco_merged.df',
+        default='./data/zuco_preprocessed_dataframe/zuco_merged.df',
         help='Path to the merged dataset pickle file'
     )
     parser.add_argument(
@@ -292,6 +303,13 @@ def parse_args():
         choices=['32', '16-mixed', 'bf16-mixed'],
         help='Training precision'
     )
+    parser.add_argument(
+        '--strategy',
+        type=str,
+        default='auto',
+        choices=['auto', 'ddp', 'ddp_spawn', 'deepspeed', 'fsdp'],
+        help='Distributed training strategy'
+    )
     
     # Early stopping arguments
     parser.add_argument(
@@ -325,6 +343,9 @@ def parse_args():
 
 def display_label_distribution(datamodule, classification_label_key, classification_labels):
     """Display classification label distribution in the training dataset."""
+    if not is_main_process():
+        return
+    
     print("\n" + "=" * 80)
     print(f"Classification Label Distribution ({classification_label_key})")
     print("=" * 80)
@@ -361,6 +382,9 @@ def display_label_distribution(datamodule, classification_label_key, classificat
 
 def display_confusion_matrix(model, classification_labels):
     """Display the confusion matrix after testing."""
+    if not is_main_process():
+        return
+    
     if not hasattr(model, 'confusion_matrix'):
         print("\nWarning: No confusion matrix found. Make sure test() was called.")
         return
@@ -408,8 +432,14 @@ def main():
     
     L.seed_everything(args.seed, workers=True)
     
-    # Create timestamp for this run
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    # Create timestamp for this run - must be consistent across all processes
+    # Use environment variable to share timestamp across processes in DDP
+    if 'RUN_TIMESTAMP' in os.environ:
+        timestamp = os.environ['RUN_TIMESTAMP']
+    else:
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        os.environ['RUN_TIMESTAMP'] = timestamp
+    
     run_name = f'{args.experiment_name}_{timestamp}'
     
     # Set up directory structure: ./logs/<experiment_name>_<timestamp>/
@@ -421,37 +451,41 @@ def main():
     checkpoint_dir = os.path.join(run_dir, 'checkpoints')
     log_file = os.path.join(run_dir, 'training.log')
     
-    Path(tensorboard_dir).mkdir(parents=True, exist_ok=True)
-    Path(checkpoint_dir).mkdir(parents=True, exist_ok=True)
+    # Only create directories and TeeLogger on main process
+    if is_main_process():
+        Path(tensorboard_dir).mkdir(parents=True, exist_ok=True)
+        Path(checkpoint_dir).mkdir(parents=True, exist_ok=True)
 
-    # Save the bash script for reproducibility
-    bash_script_path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                                    'train_script', 'run_train_glim_cls.sh')
-    if os.path.exists(bash_script_path):
-        shutil.copy2(bash_script_path, os.path.join(run_dir, 'run_train_glim_cls.sh'))
-        print(f"Saved training script to: {os.path.join(run_dir, 'run_train_glim_cls.sh')}")
+        # Save the bash script for reproducibility
+        bash_script_path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                                        'train_script', 'run_train_glim_cls.sh')
+        if os.path.exists(bash_script_path):
+            shutil.copy2(bash_script_path, os.path.join(run_dir, 'run_train_glim_cls.sh'))
+            print(f"Saved training script to: {os.path.join(run_dir, 'run_train_glim_cls.sh')}")
 
-    # Set up file logging using TeeLogger (defined at module level)
-    sys.stdout = TeeLogger(log_file, sys.stdout)
-    sys.stderr = TeeLogger(log_file.replace('.log', '_error.log'), sys.stderr)
-    
-    print("=" * 80)
-    print("GLIM_CLS Training (Combined GLIM Encoder + MLP Classifier)")
-    print("=" * 80)
-    print(f"Run directory: {run_dir}")
-    print(f"Data path: {args.data_path}")
-    print(f"Checkpoint: {args.checkpoint}")
-    print(f"Classification label key: {args.classification_label_key}")
-    print(f"Classification labels: {args.classification_labels}")
-    print(f"MLP hidden dims: {args.mlp_hidden_dims}")
-    print(f"Batch size: {args.batch_size}")
-    print(f"Learning rate: {args.lr} (max), {args.min_lr} (min)")
-    print(f"Warmup epochs: {args.warmup_epochs}")
-    print(f"Max epochs: {args.max_epochs}")
-    print(f"Freeze encoder: {args.freeze_encoder}")
-    print(f"Use Prompt: {not args.do_not_use_prompt}")
-    print(f"Loss weights - clip: {args.clip_loss_weight}, lm: {args.lm_loss_weight}, commitment: {args.commitment_loss_weight}, mlp: {args.mlp_loss_weight}")
-    print("=" * 80)
+        # Set up file logging using TeeLogger (defined at module level)
+        sys.stdout = TeeLogger(log_file, sys.stdout)
+        sys.stderr = TeeLogger(log_file.replace('.log', '_error.log'), sys.stderr)
+        
+        print("=" * 80)
+        print("GLIM_CLS Training (Combined GLIM Encoder + MLP Classifier)")
+        print("=" * 80)
+        print(f"Run directory: {run_dir}")
+        print(f"Data path: {args.data_path}")
+        print(f"Checkpoint: {args.checkpoint}")
+        print(f"Classification label key: {args.classification_label_key}")
+        print(f"Classification labels: {args.classification_labels}")
+        print(f"MLP hidden dims: {args.mlp_hidden_dims}")
+        print(f"Batch size: {args.batch_size}")
+        print(f"Learning rate: {args.lr} (max), {args.min_lr} (min)")
+        print(f"Warmup epochs: {args.warmup_epochs}")
+        print(f"Max epochs: {args.max_epochs}")
+        print(f"Freeze encoder: {args.freeze_encoder}")
+        print(f"Use Prompt: {not args.do_not_use_prompt}")
+        print(f"Loss weights - clip: {args.clip_loss_weight}, lm: {args.lm_loss_weight}, commitment: {args.commitment_loss_weight}, mlp: {args.mlp_loss_weight}")
+        print(f"Strategy: {args.strategy}")
+        print(f"Devices: {args.device}")
+        print("=" * 80)
     
     if not os.path.exists(args.data_path):
         raise FileNotFoundError(f"Data file not found: {args.data_path}")
@@ -459,7 +493,9 @@ def main():
     if args.checkpoint is not None and not os.path.exists(args.checkpoint):
         raise FileNotFoundError(f"Checkpoint not found: {args.checkpoint}")
     
-    print("\nInitializing data module with weighted sampling...")
+    if is_main_process():
+        print("\nInitializing data module with weighted sampling...")
+    
     datamodule = GLIMDataModule(
         data_path=args.data_path,
         eval_noise_input=False,
@@ -470,17 +506,23 @@ def main():
         use_weighted_sampler=True,
         classification_label_key=args.classification_label_key
     )
-    print("Weighted sampling enabled to handle class imbalance")
+    
+    if is_main_process():
+        print("Weighted sampling enabled to handle class imbalance")
 
+    # Display distribution of labels (run or not set in display_label_distribution())
     display_label_distribution(datamodule, args.classification_label_key, args.classification_labels)
 
-    print("\nInitializing GLIM_CLS model...")
+    if is_main_process():
+        print("\nInitializing GLIM_CLS model...")
     
     if args.checkpoint is not None:
-        print(f"Loading model from checkpoint: {args.checkpoint}")
+        if is_main_process():
+            print(f"Loading model from checkpoint: {args.checkpoint}")
         model = GLIM_CLS.load_from_checkpoint(args.checkpoint)
     else:
-        print("Creating new GLIM_CLS model...")
+        if is_main_process():
+            print("Creating new GLIM_CLS model...")
         model = GLIM_CLS(
             input_eeg_len=DEFAULT_INPUT_EEG_LEN,
             hidden_eeg_len=DEFAULT_HIDDEN_EEG_LEN,
@@ -515,15 +557,16 @@ def main():
             warmup_epochs=args.warmup_epochs,
         )
     
-    print(f"Model created with:")
-    print(f"  Embedding dim: {model.embed_dim}")
-    print(f"  MLP architecture: {model.embed_dim} -> {' -> '.join(map(str, args.mlp_hidden_dims))} -> {len(args.classification_labels)}")
-    print(f"  Classification labels: {args.classification_labels}")
-    
-    if args.freeze_encoder:
-        print(f"  Encoder: FROZEN (only training MLP classifier)")
-    else:
-        print(f"  Encoder: TRAINABLE")
+    if is_main_process():
+        print(f"Model created with:")
+        print(f"  Embedding dim: {model.embed_dim}")
+        print(f"  MLP architecture: {model.embed_dim} -> {' -> '.join(map(str, args.mlp_hidden_dims))} -> {len(args.classification_labels)}")
+        print(f"  Classification labels: {args.classification_labels}")
+        
+        if args.freeze_encoder:
+            print(f"  Encoder: FROZEN (only training MLP classifier)")
+        else:
+            print(f"  Encoder: TRAINABLE")
     
     # Set up TensorBoard logger (inside tensorboard/ subdirectory)
     logger = TensorBoardLogger(
@@ -532,9 +575,11 @@ def main():
         version='',
         default_hp_metric=False
     )
-    print(f"\nTensorBoard logs: {tensorboard_dir}")
-    print(f"Checkpoints: {checkpoint_dir}")
-    print(f"Training log: {log_file}")
+    
+    if is_main_process():
+        print(f"\nTensorBoard logs: {tensorboard_dir}")
+        print(f"Checkpoints: {checkpoint_dir}")
+        print(f"Training log: {log_file}")
     
     callbacks = [
         ModelCheckpoint(
@@ -562,41 +607,55 @@ def main():
                 verbose=True
             )
         )
-        print(f"Early stopping enabled with patience={args.patience}")
+        if is_main_process():
+            print(f"Early stopping enabled with patience={args.patience}")
     
-    print("\nInitializing trainer...")
+    if is_main_process():
+        print("\nInitializing trainer...")
+    
     if torch.cuda.is_available():
         device = args.device
     else:
         device = 'auto'
     
+    # Determine strategy based on number of devices
+    strategy = args.strategy
+    # TODO: to be tested - set to 'auto' to avoid errors
+    # if strategy == 'auto' and isinstance(device, list) and len(device) > 1:
+    #     strategy = 'ddp'
+    
     trainer = L.Trainer(
         max_epochs=args.max_epochs,
         accelerator=args.accelerator,
         devices=device,
+        strategy=strategy,
         precision=args.precision,
         logger=logger,
         callbacks=callbacks,
         log_every_n_steps=10,
         val_check_interval=1.0,
         deterministic=True,
-        use_distributed_sampler=False
+        use_distributed_sampler=(strategy != 'auto' and strategy is not None)
     )
     
     trainer.logger.log_hyperparams(vars(args))
     
-    print("\nStarting training...")
-    print("=" * 80)
+    if is_main_process():
+        print("\nStarting training...")
+        print("=" * 80)
+    
     trainer.fit(model, datamodule)
     
-    print("\n" + "=" * 80)
-    print("Training completed!")
-    print(f"Best model checkpoint: {trainer.checkpoint_callback.best_model_path}")
-    print(f"Best validation accuracy: {trainer.checkpoint_callback.best_model_score:.4f}")
-    print("=" * 80)
+    if is_main_process():
+        print("\n" + "=" * 80)
+        print("Training completed!")
+        print(f"Best model checkpoint: {trainer.checkpoint_callback.best_model_path}")
+        print(f"Best validation accuracy: {trainer.checkpoint_callback.best_model_score:.4f}")
+        print("=" * 80)
     
     if trainer.checkpoint_callback.best_model_path:
-        print("\nRunning test evaluation on best model...")
+        if is_main_process():
+            print("\nRunning test evaluation on best model...")
         trainer.test(model, datamodule,
                     ckpt_path=trainer.checkpoint_callback.best_model_path)
         

@@ -62,7 +62,7 @@ SEED=42
 
 # Hardware
 ACCELERATOR="auto"
-DEVICE=0
+DEVICE=(0)
 PRECISION="bf16-mixed"
 NUM_WORKERS=4
 
@@ -107,7 +107,7 @@ python -m train.train_glim_cls \
     --log_dir "$LOG_DIR" \
     --experiment_name "$EXPERIMENT_NAME" \
     --accelerator "$ACCELERATOR" \
-    --device $DEVICE \
+    --device "${DEVICE[@]}" \
     --precision "$PRECISION" \
     --seed $SEED \
     --num_workers $NUM_WORKERS
