@@ -600,8 +600,8 @@ def main():
     if is_main_process():
         print(f"Model created with:")
         print(f"  Embedding dim: {model.embed_dim}")
-        print(f"  MLP architecture: {model.embed_dim} -> {' -> '.join(map(str, args.mlp_hidden_dims))} -> {len(args.classification_labels)}")
-        print(f"  Classification labels: {args.classification_labels}")
+        print(f"  MLP architecture: {model.embed_dim} -> {' -> '.join(map(str, args.mlp_hidden_dims))} -> provided cls label count")
+        print(f"  * Please notice that the architecture may vary due to the label provided")
         
         if args.freeze_encoder:
             print(f"  Encoder: FROZEN (only training MLP classifier)")

@@ -1,13 +1,14 @@
 import os
 # WARNING: uncomment if needed
-os.environ['HF_HOME'] = '/mnt/afs/250010218/hf_cache'
+# os.environ['HF_HOME'] = '/mnt/afs/250010218/hf_cache'
 import numpy as np
 import pandas as pd
 from sentence_transformers import SentenceTransformer
 from keybert import KeyBERT
-from transformers import pipeline
+from transformers import pipeline, GPT2LMHeadModel, GPT2Tokenizer
 import pickle
 import torch
+from tqdm import tqdm
 
 # tmp path (saving path)
 # User can modify this path to save outputs to a different location
@@ -15,6 +16,12 @@ import torch
 tmp_path = './data/zuco_preprocessed_dataframe'
 # Create tmp directory if it doesn't exist
 os.makedirs(tmp_path, exist_ok=True)
+
+# create cache directory
+model_cache_dir = tmp_path + '/hf_cache'
+if not os.path.exists(model_cache_dir):
+    os.makedirs(model_cache_dir)
+    print(f"Created cache directory: {model_cache_dir}")
 
 # Use CUDA if available, otherwise fallback to CPU
 device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
@@ -29,16 +36,17 @@ sentence_embeddings = sbert_model.encode(data['input text'].tolist(), show_progr
 
 # 3.1 Generate topic labels
 print("Generating topic labels...")
-classifier = pipeline("zero-shot-classification", model="facebook/bart-large-mnli", device=device)
+classifier = pipeline("zero-shot-classification", model="facebook/bart-large-mnli", device=device, model_kwargs={"cache_dir": model_cache_dir})
 candidate_labels = ["Movie Reviews and Sentiment", "Biographies and Factual Knowledge"]
-batch_results = classifier(data['input text'].tolist(), candidate_labels)
+batch_results = classifier(data['input text'].tolist(), candidate_labels, batch_size=8)
 topic_labels = [result['labels'][0] for result in batch_results]
 
 # 3.2 Generate sentiment labels
 print("Generating sentiment labels...")
 sentiment_pipeline = pipeline("sentiment-analysis", 
                               model="cardiffnlp/twitter-roberta-base-sentiment-latest", 
-                              device=device)
+                              device=device,
+                              model_kwargs={"cache_dir": model_cache_dir})
 def generate(text:str) -> str:
     """
     Generate sentiment label for the given text.
@@ -71,6 +79,42 @@ for text in data['input text'].tolist():
 
 sentiment_labels = [ lbl if lbl == 'neutral' else 'non_neutral' for lbl in sentiment_labels ]
 
+# === fetch input sentences for 3.3 - 3.5 === #
+sentence : pd.Series = data['input text']     #
+# =========================================== #
+# 3.3 Generate Sentence Type [["question", "statement"]
+classifier = pipeline("zero-shot-classification", 
+                    model="facebook/bart-large-mnli", 
+                    device=device,
+                    model_kwargs={"cache_dir": model_cache_dir}) 
+candidate_labels = ["question", "statement"]
+print("Generating Sentence Type...")
+batch_results = classifier(sentence.tolist(), candidate_labels, batch_size=8)
+type_labels = [result['labels'][0] for result in batch_results]
+
+# 3.4 Calc sentence lengths
+lengths = sentence.apply(lambda x: len(str(x).split()))
+
+# 3.5 Generate Surprisal - GPT-2
+print(f"Loading GPT-2 (cached to {model_cache_dir})...")
+gpt2_tokenizer = GPT2Tokenizer.from_pretrained('gpt2', cache_dir=model_cache_dir)
+gpt2_model = GPT2LMHeadModel.from_pretrained('gpt2', cache_dir=model_cache_dir)
+gpt2_model = gpt2_model.to(device)
+def calculate_surprisal(text):
+    inputs = gpt2_tokenizer(text, return_tensors='pt').to(gpt2_model.device)
+    with torch.no_grad():
+        outputs = gpt2_model(**inputs, labels=inputs['input_ids'])
+    return outputs.loss.item()
+tqdm.pandas(desc="Calculating Surprisal")
+surprisals = sentence.progress_apply(calculate_surprisal)
+
+# === features for 3.3 - 3.5 === #
+features_33_35 = pd.DataFrame({
+    'type_label': type_labels,
+    'length': lengths,
+    'surprisal': surprisals
+})
+
 # 4. Extract keyword text (Top 3)
 print("Extracting keywords...")
 kw_model = KeyBERT(model=sbert_model) # Reuse model to save memory
@@ -97,9 +141,14 @@ keywords_df = pd.DataFrame(keywords_list, columns=['keyword_1', 'keyword_2', 'ke
 topic_df = pd.DataFrame({'topic_label': topic_labels})
 sentiment_df = pd.DataFrame({'sentiment label' : sentiment_labels})
 # TODO: make sure we don't have duplicated columns
-data.drop(columns=['keyword_1', 'keyword_2', 'keyword_3', 'topic_label', 'sentiment label'], axis=1, errors='ignore', inplace=True)
+data.drop(columns=['keyword_1', 'keyword_2', 'keyword_3', 
+                   'topic_label', 
+                   'sentiment label'
+                   'type_label',
+                   'length',
+                   'surprisal'], axis=1, errors='ignore', inplace=True)
 # Merge
-data_new = pd.concat([data, keywords_df, topic_df, sentiment_df], axis=1)
+data_new = pd.concat([data, keywords_df, topic_df, sentiment_df, features_33_35], axis=1)
 
 #######################################
 """ Assign embeddings to Unique IDs """
