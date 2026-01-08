@@ -51,6 +51,7 @@ class GLIM_PARALLEL(L.LightningModule):
                  num_heads: int = 8,
                  mlp_ratio: int = 4,
                  dropout: float = 0.0,
+                 use_channel_weights: bool = False,
                  clip_loss_weight: float = 0.5,
                  lm_loss_weight: float = 0.0,
                  commitment_loss_weight: float = 0.0,
@@ -135,7 +136,8 @@ class GLIM_PARALLEL(L.LightningModule):
         self.eeg_encoder = EEGEncoder(input_eeg_len, hidden_eeg_len, input_dim, hidden_dim,
                                       0, n_in_blocks, n_out_blocks,
                                       in_temporal_modulate, out_is_causal,
-                                      num_heads=num_heads, mlp_ratio=mlp_ratio, dropout=dropout)
+                                      num_heads=num_heads, mlp_ratio=mlp_ratio, dropout=dropout,
+                                      use_channel_weights=use_channel_weights)
         self.aligner = Aligner(hidden_dim, embed_dim, num_heads, dropout, commitment_loss_key, use_y_mask)
         self.use_y_mask = use_y_mask
 

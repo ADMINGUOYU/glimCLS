@@ -357,7 +357,17 @@ def parse_args():
         default=4,
         help='Number of data loading workers'
     )
-    
+    parser.add_argument(
+        '--use_zuco1_only',
+        action='store_true',
+        help='Use only ZuCo1 dataset (filter out ZuCo2)'
+    )
+    parser.add_argument(
+        '--use_channel_weights',
+        action='store_true',
+        help='Use learnable weights for each EEG channel'
+    )
+
     return parser.parse_args()
 
 
@@ -498,6 +508,8 @@ def main():
         print("=" * 80)
         print(f"Run directory: {run_dir}")
         print(f"Data path: {args.data_path}")
+        print(f"Use ZuCo1 only: {args.use_zuco1_only}")
+        print(f"Use channel weights: {args.use_channel_weights}")
         print(f"Checkpoint: {args.checkpoint}")
         print(f"Sentiment labels: {args.sentiment_labels}")
         print(f"Topic labels: {args.topic_labels}")
@@ -541,7 +553,8 @@ def main():
         num_workers=args.num_workers,
         use_weighted_sampler=True,
         classification_label_keys=['sentiment label', 'topic_label'],
-        regression_label_keys=regression_tasks
+        regression_label_keys=regression_tasks,
+        use_zuco1_only=args.use_zuco1_only
     )
 
     if is_main_process():
@@ -573,6 +586,7 @@ def main():
             num_heads=args.num_heads,
             dropout=args.encoder_dropout,
             use_prompt=(not args.do_not_use_prompt),
+            use_channel_weights=args.use_channel_weights,
             batch_size=args.batch_size,
 
             # Multi-task arguments
@@ -590,7 +604,7 @@ def main():
             topic_loss_weight=args.topic_loss_weight,
             length_loss_weight=args.length_loss_weight,
             surprisal_loss_weight=args.surprisal_loss_weight,
-            
+
             # Optimizer arguments
             lr=args.lr,
             min_lr=args.min_lr,

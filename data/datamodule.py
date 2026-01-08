@@ -31,6 +31,7 @@ class GLIMDataModule(pl.LightningDataModule):
                  classification_label_key: str = None,
                  classification_label_keys: list = None,
                  regression_label_keys: list = None,
+                 use_zuco1_only: bool = False,
                  ):
         super().__init__()
         assert os.path.exists(data_path)
@@ -43,6 +44,7 @@ class GLIMDataModule(pl.LightningDataModule):
         self.test_set_key = test_set_key
         self.num_workers = num_workers
         self.use_weighted_sampler = use_weighted_sampler
+        self.use_zuco1_only = use_zuco1_only
 
         # Handle both single and multi-task modes
         if classification_label_keys is not None:
@@ -67,7 +69,10 @@ class GLIMDataModule(pl.LightningDataModule):
             local_rank = '0'
         print(f'[Rank {local_rank}][{self.__class__.__name__}] running `setup()`...', end='\n')
         df = pd.read_pickle(self.data_path)
-        
+
+        if self.use_zuco1_only:
+            df = df[df['dataset'] == 'ZuCo1']
+
         # Load embeddings if path is provided
         embeddings_dict = None
         if self.embeddings_path is not None and os.path.exists(self.embeddings_path):

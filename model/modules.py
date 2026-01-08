@@ -139,17 +139,19 @@ class EEGEncoder(nn.Module):
         in_dim = 128,
         out_dim = 256,
         task_embed_len = 4,
-        n_in_blocks = 6, 
-        n_out_blocks = 6, 
+        n_in_blocks = 6,
+        n_out_blocks = 6,
         in_temporal_modulate = True,
-        out_is_causal = True, 
+        out_is_causal = True,
+        use_channel_weights = False,
         **block_kwargs,
         ):
         super().__init__()
 
         self.out_dim = out_dim
         self.task_embed_len = task_embed_len
-        self.in_blocks = nn.ModuleList([EncoderBlock(in_dim, in_len, inject_prompt=True, 
+        self.use_channel_weights = use_channel_weights
+        self.in_blocks = nn.ModuleList([EncoderBlock(in_dim, in_len, inject_prompt=True,
                                                      temporal_modulate=in_temporal_modulate,
                                                      is_causal=False, **block_kwargs) for _ in range(n_in_blocks)])
         self.x_proj = nn.Linear(in_dim, out_dim)
@@ -161,6 +163,9 @@ class EEGEncoder(nn.Module):
 
         pos_embed = get_1d_sincos_pos_embed_from_grid(in_dim, np.arange(in_len))
         self.pos_embed = nn.Parameter(torch.from_numpy(pos_embed).float().unsqueeze(0), requires_grad=False)
+
+        if self.use_channel_weights:
+            self.channel_weights = nn.Parameter(torch.ones(1, 1, in_dim))
 
 
     def forward(self, eeg, mask, p, need_weights=False) -> tuple[torch.Tensor, dict]:
@@ -174,7 +179,11 @@ class EEGEncoder(nn.Module):
             attn_weights    (n, l, c)     a dict of attention weights for each of i-th decoder block 
         '''
         bsz = eeg.shape[0]
-        x = eeg + self.pos_embed                                        # (n, t, c) 
+        if self.use_channel_weights:
+            x = eeg * self.channel_weights
+        else:
+            x = eeg
+        x = x + self.pos_embed                                        # (n, t, c) 
         for i, in_block in enumerate(self.in_blocks):
             x = in_block(x, mask, p)                                    # (n, t, c)
 

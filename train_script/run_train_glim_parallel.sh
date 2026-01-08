@@ -49,6 +49,8 @@ LR=2e-4
 MIN_LR=1e-5
 WARMUP_EPOCHS=15
 SEED=42
+USE_ZUCO1_ONLY=false
+USE_CHANNEL_WEIGHTS=false
 
 # Hardware
 ACCELERATOR="auto"
@@ -103,7 +105,9 @@ python -m train.train_glim_parallel \
     --device "${DEVICE[@]}" \
     --precision "$PRECISION" \
     --seed $SEED \
-    --num_workers $NUM_WORKERS
+    --num_workers $NUM_WORKERS \
+    ${USE_ZUCO1_ONLY:+--use_zuco1_only} \
+    ${USE_CHANNEL_WEIGHTS:+--use_channel_weights}
 
 # Optional flags (uncomment as needed):
 # --do_not_use_prompt    # Disable prompt embeddings
