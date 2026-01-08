@@ -72,6 +72,7 @@ class GLIM_PARALLEL(L.LightningModule):
                  topic_loss_weight: float = 0.25,
                  length_loss_weight: float = 0.25,
                  surprisal_loss_weight: float = 0.25,
+                 use_class_weights: bool = False,
 
                  # Optimizer arguments
                  lr: float = 1e-4,
@@ -121,6 +122,7 @@ class GLIM_PARALLEL(L.LightningModule):
         self.classification_tasks = classification_tasks
         self.regression_tasks = regression_tasks
         self.freeze_encoder = freeze_encoder
+        self.use_class_weights = use_class_weights
 
         # Prompt configuration
         self.prompt_keys = {
@@ -176,6 +178,42 @@ class GLIM_PARALLEL(L.LightningModule):
             in_dim = hidden_dim
         layers.append(nn.Linear(in_dim, output_dim))
         return nn.Sequential(*layers)
+
+    def _compute_class_weights(self, label_counts: dict, num_classes: int) -> torch.Tensor:
+        """Compute class weights using inverse frequency formula.
+
+        Args:
+            label_counts: Dict mapping class_id -> count
+            num_classes: Total number of classes
+
+        Returns:
+            Tensor of shape (num_classes,) with weights for each class
+        """
+        total_samples = sum(label_counts.values())
+        weights = torch.zeros(num_classes)
+        for class_id, count in label_counts.items():
+            weights[class_id] = total_samples / (num_classes * count)
+        return weights
+
+    def set_class_weights(self, sentiment_counts: dict, topic_counts: dict):
+        """Set class weights for both classification tasks.
+
+        Args:
+            sentiment_counts: Dict mapping sentiment class_id -> count
+            topic_counts: Dict mapping topic class_id -> count
+        """
+        if self.use_class_weights:
+            sentiment_weights = self._compute_class_weights(
+                sentiment_counts, len(self.classification_tasks['sentiment'])
+            )
+            topic_weights = self._compute_class_weights(
+                topic_counts, len(self.classification_tasks['topic'])
+            )
+            self.register_buffer('sentiment_class_weights', sentiment_weights)
+            self.register_buffer('topic_class_weights', topic_weights)
+        else:
+            self.register_buffer('sentiment_class_weights', None)
+            self.register_buffer('topic_class_weights', None)
 
     def setup(self, stage):
         """Setup the text model (T5) using bfloat16 by default."""
@@ -352,7 +390,11 @@ class GLIM_PARALLEL(L.LightningModule):
             sentiment_labels, self.classification_tasks['sentiment']
         )
         sentiment_logits = self.sentiment_classifier(eeg_emb)
-        loss_sentiment = F.cross_entropy(sentiment_logits, sentiment_ids, ignore_index=-1)
+        loss_sentiment = F.cross_entropy(
+            sentiment_logits, sentiment_ids,
+            weight=self.sentiment_class_weights if self.use_class_weights else None,
+            ignore_index=-1
+        )
         acc_sentiment = multiclass_accuracy(
             sentiment_logits, sentiment_ids,
             num_classes=len(self.classification_tasks['sentiment']),
@@ -365,7 +407,11 @@ class GLIM_PARALLEL(L.LightningModule):
             topic_labels, self.classification_tasks['topic']
         )
         topic_logits = self.topic_classifier(eeg_emb)
-        loss_topic = F.cross_entropy(topic_logits, topic_ids, ignore_index=-1)
+        loss_topic = F.cross_entropy(
+            topic_logits, topic_ids,
+            weight=self.topic_class_weights if self.use_class_weights else None,
+            ignore_index=-1
+        )
         acc_topic = multiclass_accuracy(
             topic_logits, topic_ids,
             num_classes=len(self.classification_tasks['topic']),

@@ -68,6 +68,7 @@ USE_ZUCO1_ONLY=true
 USE_CHANNEL_WEIGHTS=false
 USE_SCALED_LR=true          # Scale LR by number of GPUs in multi-GPU training
 USE_PER_GPU_BATCH_SIZE=true # Treat BATCH_SIZE as per-GPU (global = BATCH_SIZE × num_gpus)
+USE_CLASS_WEIGHTS=false     # Enable per-class loss weighting based on inverse frequency
 
 # Hardware multi-GPU settings
 # ACCELERATOR="gpu"
@@ -137,6 +138,7 @@ python -m train.train_glim_parallel \
     ${USE_CHANNEL_WEIGHTS:+--use_channel_weights} \
     ${USE_SCALED_LR:+--use_scaled_lr} \
     ${USE_PER_GPU_BATCH_SIZE:+--use_per_gpu_batch_size} \
+    ${USE_CLASS_WEIGHTS:+--use_class_weights} \
     ${MODEL_CACHE_DIR:+--model_cache_dir "$MODEL_CACHE_DIR"}
 
 # Optional flags (uncomment as needed):

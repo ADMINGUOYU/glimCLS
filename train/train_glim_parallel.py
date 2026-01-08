@@ -384,6 +384,11 @@ def parse_args():
         action='store_true',
         help='Treat batch_size as per-GPU (global batch size = batch_size × num_gpus)'
     )
+    parser.add_argument(
+        '--use_class_weights',
+        action='store_true',
+        help='Use per-class loss weighting based on inverse frequency'
+    )
 
     return parser.parse_args()
 
@@ -429,6 +434,33 @@ def display_label_distributions(datamodule, classification_tasks):
             print(f"  {label_name}: {count} samples ({percentage:.2f}%)")
 
     print("=" * 80)
+
+
+def compute_class_counts(datamodule, classification_tasks):
+    """Compute class counts for all classification tasks.
+
+    Returns:
+        Dict mapping task_name -> {class_id: count}
+    """
+    datamodule.setup('fit')
+    train_dataset = datamodule.train_set
+
+    task_counts = {}
+    for task_name, task_labels in classification_tasks.items():
+        label_key = f"{task_name} label" if task_name == "sentiment" else f"{task_name}_label"
+        label_to_id = {label: i for i, label in enumerate(task_labels)}
+
+        counts = {}
+        for i in range(len(train_dataset)):
+            sample = train_dataset[i]
+            label = sample.get(label_key, None)
+            if label is not None and label in label_to_id:
+                class_id = label_to_id[label]
+                counts[class_id] = counts.get(class_id, 0) + 1
+
+        task_counts[task_name] = counts
+
+    return task_counts
 
 
 def display_confusion_matrices(model, classification_tasks):
@@ -666,6 +698,7 @@ def main():
             topic_loss_weight=args.topic_loss_weight,
             length_loss_weight=args.length_loss_weight,
             surprisal_loss_weight=args.surprisal_loss_weight,
+            use_class_weights=args.use_class_weights,
 
             # Optimizer arguments
             lr=args.lr,
@@ -683,7 +716,17 @@ def main():
             print(f"  Encoder: FROZEN (only training MLP classifier)")
         else:
             print(f"  Encoder: TRAINABLE")
-    
+
+    # Set class weights if enabled
+    if args.use_class_weights:
+        if is_main_process():
+            print("\nComputing class weights for loss weighting...")
+        class_counts = compute_class_counts(datamodule, classification_tasks)
+        model.set_class_weights(class_counts['sentiment'], class_counts['topic'])
+        if is_main_process():
+            print(f"  Sentiment weights: {model.sentiment_class_weights.tolist()}")
+            print(f"  Topic weights: {model.topic_class_weights.tolist()}")
+
     # Set up TensorBoard logger (inside tensorboard/ subdirectory)
     logger = TensorBoardLogger(
         save_dir=tensorboard_dir,
