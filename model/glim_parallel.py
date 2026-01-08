@@ -215,6 +215,21 @@ class GLIM_PARALLEL(L.LightningModule):
             self.register_buffer('sentiment_class_weights', None)
             self.register_buffer('topic_class_weights', None)
 
+    def set_regression_stats(self, length_mean: float, length_std: float,
+                            surprisal_mean: float, surprisal_std: float):
+        """Set normalization statistics for regression tasks.
+
+        Args:
+            length_mean: Mean of length values in training data
+            length_std: Std of length values in training data
+            surprisal_mean: Mean of surprisal values in training data
+            surprisal_std: Std of surprisal values in training data
+        """
+        self.register_buffer('length_mean', torch.tensor(length_mean, dtype=torch.float32))
+        self.register_buffer('length_std', torch.tensor(length_std, dtype=torch.float32))
+        self.register_buffer('surprisal_mean', torch.tensor(surprisal_mean, dtype=torch.float32))
+        self.register_buffer('surprisal_std', torch.tensor(surprisal_std, dtype=torch.float32))
+
     def setup(self, stage):
         """Setup the text model (T5) using bfloat16 by default."""
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -323,10 +338,36 @@ class GLIM_PARALLEL(L.LightningModule):
             label_ids.append(label_id)
         return torch.tensor(label_ids, dtype=torch.int64, device=self.device)
 
-    def encode_regression_labels(self, labels: list):
-        """Convert list of values to float tensor."""
+    def encode_regression_labels(self, labels: list, task: str):
+        """Convert list of values to normalized float tensor.
+
+        Args:
+            labels: List of raw label values
+            task: Task name ('length' or 'surprisal') for normalization
+        """
         values = [float(label) for label in labels]
-        return torch.tensor(values, dtype=torch.float32, device=self.device)
+        values_tensor = torch.tensor(values, dtype=torch.float32, device=self.device)
+
+        # Normalize using task-specific statistics
+        if task == 'length' and hasattr(self, 'length_mean'):
+            values_tensor = (values_tensor - self.length_mean) / self.length_std
+        elif task == 'surprisal' and hasattr(self, 'surprisal_mean'):
+            values_tensor = (values_tensor - self.surprisal_mean) / self.surprisal_std
+
+        return values_tensor
+
+    def denormalize_predictions(self, preds: torch.Tensor, task: str):
+        """Denormalize predictions back to original scale.
+
+        Args:
+            preds: Normalized predictions
+            task: Task name ('length' or 'surprisal')
+        """
+        if task == 'length' and hasattr(self, 'length_mean'):
+            return preds * self.length_std + self.length_mean
+        elif task == 'surprisal' and hasattr(self, 'surprisal_mean'):
+            return preds * self.surprisal_std + self.surprisal_mean
+        return preds
 
     def encode_text(self, src_ids, src_mask):
         """Encode text using the T5 encoder."""
@@ -421,17 +462,23 @@ class GLIM_PARALLEL(L.LightningModule):
         # === REGRESSION TASKS ===
         # Length regression
         length_labels = batch['length']
-        length_values = self.encode_regression_labels(length_labels)
+        length_values = self.encode_regression_labels(length_labels, 'length')
         length_preds = self.length_regressor(eeg_emb).squeeze(-1)
         loss_length = F.mse_loss(length_preds, length_values)
-        mae_length = F.l1_loss(length_preds, length_values)
+        # Denormalize for MAE in original scale
+        length_preds_denorm = self.denormalize_predictions(length_preds, 'length')
+        length_values_denorm = self.denormalize_predictions(length_values, 'length')
+        mae_length = F.l1_loss(length_preds_denorm, length_values_denorm)
 
         # Surprisal regression
         surprisal_labels = batch['surprisal']
-        surprisal_values = self.encode_regression_labels(surprisal_labels)
+        surprisal_values = self.encode_regression_labels(surprisal_labels, 'surprisal')
         surprisal_preds = self.surprisal_regressor(eeg_emb).squeeze(-1)
         loss_surprisal = F.mse_loss(surprisal_preds, surprisal_values)
-        mae_surprisal = F.l1_loss(surprisal_preds, surprisal_values)
+        # Denormalize for MAE in original scale
+        surprisal_preds_denorm = self.denormalize_predictions(surprisal_preds, 'surprisal')
+        surprisal_values_denorm = self.denormalize_predictions(surprisal_values, 'surprisal')
+        mae_surprisal = F.l1_loss(surprisal_preds_denorm, surprisal_values_denorm)
 
         # === TOTAL LOSS ===
         loss = (loss_clip * self.clip_loss_weight +

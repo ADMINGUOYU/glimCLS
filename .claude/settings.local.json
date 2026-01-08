@@ -4,7 +4,8 @@
       "Bash(python -m train.train_glim_cls:*)",
       "Bash(ls:*)",
       "Bash(python3:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(find:*)"
     ]
   }
 }

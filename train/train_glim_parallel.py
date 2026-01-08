@@ -727,6 +727,25 @@ def main():
             print(f"  Sentiment weights: {model.sentiment_class_weights.tolist()}")
             print(f"  Topic weights: {model.topic_class_weights.tolist()}")
 
+    # Compute and set regression normalization statistics
+    if is_main_process():
+        print("\nComputing regression normalization statistics...")
+    datamodule.setup('fit')
+    train_dataset = datamodule.train_set
+    length_values = [train_dataset.data['length'][i] for i in range(len(train_dataset))]
+    surprisal_values = [train_dataset.data['surprisal'][i] for i in range(len(train_dataset))]
+
+    import numpy as np
+    length_mean = float(np.mean(length_values))
+    length_std = float(np.std(length_values))
+    surprisal_mean = float(np.mean(surprisal_values))
+    surprisal_std = float(np.std(surprisal_values))
+
+    model.set_regression_stats(length_mean, length_std, surprisal_mean, surprisal_std)
+    if is_main_process():
+        print(f"  Length: mean={length_mean:.2f}, std={length_std:.2f}")
+        print(f"  Surprisal: mean={surprisal_mean:.4f}, std={surprisal_std:.4f}")
+
     # Set up TensorBoard logger (inside tensorboard/ subdirectory)
     logger = TensorBoardLogger(
         save_dir=tensorboard_dir,
