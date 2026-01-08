@@ -43,15 +43,15 @@ SURPRISAL_LOSS_WEIGHT=0.3
 
 # Training
 # Per-GPU batch size (global batch size = BATCH_SIZE × number of GPUs)
-# Example: 72 per GPU × 8 GPUs = 576 global batch size
-BATCH_SIZE=72
+# Example: 32 per GPU × 8 GPUs = 256 global batch size
+BATCH_SIZE=32
 VAL_BATCH_SIZE=24
 MAX_EPOCHS=50
 # Base learning rate for single GPU
 # NOTE: When using multiple GPUs, LR will be scaled automatically in the training script
 # Formula: effective_lr = base_lr × num_gpus
-# Example: 2e-4 × 8 GPUs = 1.6e-3
-LR=2e-4
+# Example: 1e-4 × 8 GPUs = 1.6e-3
+LR=1e-4
 MIN_LR=1e-5
 WARMUP_EPOCHS=10
 SEED=42
