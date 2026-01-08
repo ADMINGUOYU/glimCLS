@@ -374,6 +374,16 @@ def parse_args():
         action='store_true',
         help='Use learnable weights for each EEG channel'
     )
+    parser.add_argument(
+        '--use_scaled_lr',
+        action='store_true',
+        help='Scale learning rate by number of GPUs in multi-GPU training'
+    )
+    parser.add_argument(
+        '--use_per_gpu_batch_size',
+        action='store_true',
+        help='Treat batch_size as per-GPU (global batch size = batch_size × num_gpus)'
+    )
 
     return parser.parse_args()
 
@@ -478,22 +488,37 @@ def main():
     # ============================================================================
     is_ddp = args.strategy in ['ddp', 'ddp_spawn', 'ddp_find_unused_parameters_true']
     num_devices = len(args.device) if isinstance(args.device, list) else 1
-    effective_batch_size = args.batch_size * num_devices
 
-    # Apply linear LR scaling for DDP (scales with number of GPUs)
-    if is_ddp and num_devices > 1:
+    # Calculate effective batch size based on use_per_gpu_batch_size flag
+    if args.use_per_gpu_batch_size and num_devices > 1:
+        effective_batch_size = args.batch_size * num_devices
+    else:
+        effective_batch_size = args.batch_size
+
+    # Apply linear LR scaling for multi-GPU if enabled
+    if args.use_scaled_lr and is_ddp and num_devices > 1:
         base_lr = args.lr
         scaled_lr = base_lr * num_devices
         args.lr = scaled_lr
         if is_main_process():
             print(f"\n{'='*80}")
-            print(f"DDP Configuration Detected")
+            print(f"Multi-GPU Configuration")
             print(f"{'='*80}")
             print(f"Number of GPUs: {num_devices}")
             print(f"Per-GPU batch size: {args.batch_size}")
             print(f"Effective global batch size: {effective_batch_size}")
             print(f"Base LR: {base_lr}")
             print(f"Scaled LR (linear scaling): {scaled_lr}")
+            print(f"{'='*80}\n")
+    elif is_ddp and num_devices > 1:
+        if is_main_process():
+            print(f"\n{'='*80}")
+            print(f"Multi-GPU Configuration")
+            print(f"{'='*80}")
+            print(f"Number of GPUs: {num_devices}")
+            print(f"Batch size per GPU: {args.batch_size}")
+            print(f"Effective global batch size: {effective_batch_size}")
+            print(f"Learning rate: {args.lr} (no scaling)")
             print(f"{'='*80}\n")
 
     L.seed_everything(args.seed, workers=True)

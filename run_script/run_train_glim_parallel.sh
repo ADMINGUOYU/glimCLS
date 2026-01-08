@@ -36,7 +36,7 @@ N_IN_BLOCKS=6
 N_OUT_BLOCKS=6
 NUM_HEADS=8
 ENCODER_DROPOUT=0.1
-MLP_HIDDEN_DIMS="512 256"
+MLP_HIDDEN_DIMS="512 256 128"
 MLP_DROPOUT=0.3
 
 # Loss Weights (6 total)
@@ -45,8 +45,8 @@ LM_LOSS_WEIGHT=0.5
 COMMITMENT_LOSS_WEIGHT=0.7
 SENTIMENT_LOSS_WEIGHT=0.3
 TOPIC_LOSS_WEIGHT=0.3
-LENGTH_LOSS_WEIGHT=0.3
-SURPRISAL_LOSS_WEIGHT=0.3
+LENGTH_LOSS_WEIGHT=0.0
+SURPRISAL_LOSS_WEIGHT=0.0
 
 # Training
 # Per-GPU batch size (global batch size = BATCH_SIZE × number of GPUs)
@@ -54,30 +54,34 @@ SURPRISAL_LOSS_WEIGHT=0.3
 BATCH_SIZE=72
 VAL_BATCH_SIZE=24
 MAX_EPOCHS=50
+
+
 # Base learning rate for single GPU
 # NOTE: When using multiple GPUs, LR will be scaled automatically in the training script
 # Formula: effective_lr = base_lr × num_gpus
 # Example: 1e-4 × 8 GPUs = 1.6e-3
-LR=1e-4
+LR=2e-4
 MIN_LR=1e-5
-WARMUP_EPOCHS=10
+WARMUP_EPOCHS=15
 SEED=42
-USE_ZUCO1_ONLY=ture
+USE_ZUCO1_ONLY=true
 USE_CHANNEL_WEIGHTS=false
+USE_SCALED_LR=true          # Scale LR by number of GPUs in multi-GPU training
+USE_PER_GPU_BATCH_SIZE=true # Treat BATCH_SIZE as per-GPU (global = BATCH_SIZE × num_gpus)
 
 # Hardware multi-GPU settings
-ACCELERATOR="gpu"
-STRATEGY="ddp"
-DEVICE=(0 1 2 3 4 5 6 7)  # 8 GPUs
-PRECISION="bf16-mixed"
-NUM_WORKERS=4
-
-# Hardware single-GPU settings
 # ACCELERATOR="gpu"
-# STRATEGY="auto"       
-# DEVICE=(0)            
+# STRATEGY="ddp"
+# DEVICE=(0 1 2 3 4 5 6 7)  # 8 GPUs
 # PRECISION="bf16-mixed"
 # NUM_WORKERS=4
+
+# Hardware single-GPU settings
+ACCELERATOR="gpu"
+STRATEGY="auto"       
+DEVICE=(0)            
+PRECISION="bf16-mixed"
+NUM_WORKERS=4
 
 
 
@@ -131,6 +135,8 @@ python -m train.train_glim_parallel \
     --num_workers $NUM_WORKERS \
     ${USE_ZUCO1_ONLY:+--use_zuco1_only} \
     ${USE_CHANNEL_WEIGHTS:+--use_channel_weights} \
+    ${USE_SCALED_LR:+--use_scaled_lr} \
+    ${USE_PER_GPU_BATCH_SIZE:+--use_per_gpu_batch_size} \
     ${MODEL_CACHE_DIR:+--model_cache_dir "$MODEL_CACHE_DIR"}
 
 # Optional flags (uncomment as needed):
