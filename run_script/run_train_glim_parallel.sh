@@ -15,7 +15,7 @@
 # ============================================================================
 
 # Data
-DATA_PATH="data/zuco_preprocessed_dataframe/zuco_merged_with_variants.df"
+DATA_PATH="data/ZUCO1-2_FOR_GLIMCLS/zuco_merged_with_variants.df"
 
 # Classification tasks
 SENTIMENT_LABELS=("non_neutral" "neutral")
@@ -42,19 +42,26 @@ LENGTH_LOSS_WEIGHT=0.3
 SURPRISAL_LOSS_WEIGHT=0.3
 
 # Training
+# Per-GPU batch size (global batch size = BATCH_SIZE × number of GPUs)
+# Example: 72 per GPU × 8 GPUs = 576 global batch size
 BATCH_SIZE=72
 VAL_BATCH_SIZE=24
 MAX_EPOCHS=50
+# Base learning rate for single GPU
+# NOTE: When using multiple GPUs, LR will be scaled automatically in the training script
+# Formula: effective_lr = base_lr × num_gpus
+# Example: 2e-4 × 8 GPUs = 1.6e-3
 LR=2e-4
 MIN_LR=1e-5
-WARMUP_EPOCHS=15
+WARMUP_EPOCHS=10
 SEED=42
-USE_ZUCO1_ONLY=false
+USE_ZUCO1_ONLY=ture
 USE_CHANNEL_WEIGHTS=false
 
 # Hardware
-ACCELERATOR="auto"
-DEVICE=(0)
+ACCELERATOR="gpu"
+STRATEGY="ddp"
+DEVICE=(0 1 2 3 4 5 6 7)  # 8 GPUs
 PRECISION="bf16-mixed"
 NUM_WORKERS=4
 

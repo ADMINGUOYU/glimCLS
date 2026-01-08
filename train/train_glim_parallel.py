@@ -327,7 +327,7 @@ def parse_args():
         '--strategy',
         type=str,
         default='auto',
-        choices=['auto', 'ddp', 'ddp_spawn', 'deepspeed', 'fsdp'],
+        choices=['auto', 'ddp', 'ddp_spawn', 'ddp_find_unused_parameters_true', 'deepspeed', 'fsdp'],
         help='Distributed training strategy'
     )
     
@@ -465,7 +465,30 @@ def display_confusion_matrices(model, classification_tasks):
 def main():
     """Main training function."""
     args = parse_args()
-    
+
+    # ============================================================================
+    # DDP Configuration and LR Scaling
+    # ============================================================================
+    is_ddp = args.strategy in ['ddp', 'ddp_spawn', 'ddp_find_unused_parameters_true']
+    num_devices = len(args.device) if isinstance(args.device, list) else 1
+    effective_batch_size = args.batch_size * num_devices
+
+    # Apply linear LR scaling for DDP (scales with number of GPUs)
+    if is_ddp and num_devices > 1:
+        base_lr = args.lr
+        scaled_lr = base_lr * num_devices
+        args.lr = scaled_lr
+        if is_main_process():
+            print(f"\n{'='*80}")
+            print(f"DDP Configuration Detected")
+            print(f"{'='*80}")
+            print(f"Number of GPUs: {num_devices}")
+            print(f"Per-GPU batch size: {args.batch_size}")
+            print(f"Effective global batch size: {effective_batch_size}")
+            print(f"Base LR: {base_lr}")
+            print(f"Scaled LR (linear scaling): {scaled_lr}")
+            print(f"{'='*80}\n")
+
     L.seed_everything(args.seed, workers=True)
     
     # Create timestamp for this run - must be consistent across all processes
@@ -544,6 +567,9 @@ def main():
     # Build regression tasks list
     regression_tasks = ['length', 'surprisal']
 
+    # Disable weighted sampler for DDP due to WeightedRandomSampler incompatibility
+    use_weighted_sampler = not is_ddp
+
     datamodule = GLIMDataModule(
         data_path=args.data_path,
         eval_noise_input=False,
@@ -551,14 +577,17 @@ def main():
         bsz_val=args.val_batch_size,
         bsz_test=args.val_batch_size,
         num_workers=args.num_workers,
-        use_weighted_sampler=True,
+        use_weighted_sampler=use_weighted_sampler,
         classification_label_keys=['sentiment label', 'topic_label'],
         regression_label_keys=regression_tasks,
         use_zuco1_only=args.use_zuco1_only
     )
 
     if is_main_process():
-        print("Weighted sampling enabled to handle class imbalance")
+        if use_weighted_sampler:
+            print("Weighted sampling enabled to handle class imbalance")
+        else:
+            print("Weighted sampling disabled (incompatible with DDP)")
 
     # Display distribution of labels
     display_label_distributions(datamodule, classification_tasks)
@@ -704,13 +733,16 @@ def main():
         device = args.device
     else:
         device = 'auto'
-    
-    # Determine strategy based on number of devices
-    strategy = args.strategy
-    # TODO: to be tested - set to 'auto' to avoid errors
-    # if strategy == 'auto' and isinstance(device, list) and len(device) > 1:
-    #     strategy = 'ddp'
-    
+
+    # Configure DDP strategy with find_unused_parameters for multi-task model
+    if is_ddp:
+        from lightning.pytorch.strategies import DDPStrategy
+        strategy = DDPStrategy(find_unused_parameters=True)
+        if is_main_process():
+            print(f"Using DDPStrategy with find_unused_parameters=True")
+    else:
+        strategy = args.strategy
+
     trainer = L.Trainer(
         max_epochs=args.max_epochs,
         accelerator=args.accelerator,
@@ -722,7 +754,8 @@ def main():
         log_every_n_steps=10,
         val_check_interval=1.0,
         deterministic=True,
-        use_distributed_sampler=False # we already have a distributed sampler
+        use_distributed_sampler=True,  # Enable Lightning's distributed sampler
+        sync_batchnorm=True  # Synchronize BatchNorm statistics across GPUs
     )
     
     trainer.logger.log_hyperparams(vars(args))
