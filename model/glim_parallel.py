@@ -471,3 +471,77 @@ class GLIM_PARALLEL(L.LightningModule):
             setattr(self, f'confusion_matrix_{task_name}', cm)
 
         self.test_step_outputs = {'sentiment': [], 'topic': []}
+
+    def predict_step(self, batch, batch_idx):
+        """
+        Prediction step that generates all 4 predictions from EEG data. 
+        
+        Args:
+            batch:  Dictionary containing: 
+                - 'eeg': EEG tensor of shape i.e. (batch_size, 1280, 128)
+                - 'mask': Mask tensor of shape i.e. (batch_size, 1280)
+                - 'prompt': List of prompt lists [['task' ... ], ['dataset' ... ], ['subject' ... ]]
+                
+        Returns:
+            Dictionary containing: 
+                - 'sentiment_pred': Predicted sentiment class indices
+                - 'sentiment_prob': Sentiment class probabilities
+                - 'topic_pred':  Predicted topic class indices
+                - 'topic_prob': Topic class probabilities
+                - 'length_pred': Predicted length values
+                - 'surprisal_pred':  Predicted surprisal values
+                - 'eeg_emb': EEG embeddings (for optional downstream use)
+        """
+        eeg = batch['eeg']
+        if batch['mask'] is None:
+            eeg_mask = torch.ones(eeg.shape[0], eeg.shape[1])
+        else:
+            eeg_mask = batch['mask']
+        prompts = batch['prompt']
+        
+        # Handle prompts
+        if self.use_prompt is False or batch['prompt'] is None:
+            batch_size = eeg.shape[0]
+            prompts = [['<UNK>'] * batch_size, ['<UNK>'] * batch_size, ['<UNK>'] * batch_size]
+        
+        # Encode prompts and EEG
+        prompt_ids = self.p_embedder.encode(prompts, device=self.device)
+        prompt_embed = self.p_embedder(prompt_ids, self.eval_pembed)
+        
+        eeg_hiddens, _ = self.eeg_encoder(eeg, eeg_mask, prompt_embed)
+
+        # Get EEG embedding through aligner
+        Zi, eeg_emb = self.aligner.embed_eeg(eeg_hiddens, None)  # no masks are needed (this is the input mask of embedded text)
+        # Zi: (batch_size, l, e)
+        # eeg_emb: (batch_size, e)
+
+        # Generate all predictions
+        with torch.no_grad():
+            # Sentiment classification
+            sentiment_logits = self.sentiment_classifier(eeg_emb)
+            sentiment_prob = F.softmax(sentiment_logits, dim=-1)
+            sentiment_pred = torch.argmax(sentiment_logits, dim=1)
+            
+            # Topic classification
+            topic_logits = self.topic_classifier(eeg_emb)
+            topic_prob = F.softmax(topic_logits, dim=-1)
+            topic_pred = torch.argmax(topic_logits, dim=1)
+            
+            # Length regression
+            length_pred = self.length_regressor(eeg_emb).squeeze(-1)
+            
+            # Surprisal regression
+            surprisal_pred = self.surprisal_regressor(eeg_emb).squeeze(-1)
+        
+        return {
+            'sentiment_pred': sentiment_pred,
+            'sentiment_prob': sentiment_prob,
+            'sentiment_label': [self.classification_tasks['sentiment'][idx.item()] for idx in sentiment_pred],
+            'topic_pred': topic_pred,
+            'topic_prob': topic_prob,
+            'topic_label': [self.classification_tasks['topic'][idx.item()] for idx in topic_pred],
+            'length_pred': length_pred,
+            'surprisal_pred': surprisal_pred,
+            'eeg_emb': eeg_emb,
+            'Zi': Zi
+        }
