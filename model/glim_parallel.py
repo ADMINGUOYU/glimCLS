@@ -180,15 +180,32 @@ class GLIM_PARALLEL(L.LightningModule):
     def setup(self, stage):
         """Setup the text model (T5) using bfloat16 by default."""
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+        # Print cache directory info
+        if self.model_cache_dir:
+            print(f"Loading model from cache directory: {self.model_cache_dir}")
+            # Check if cache exists to use local_files_only
+            import pathlib
+            cache_path = pathlib.Path(self.model_cache_dir)
+            model_cache_exists = (cache_path / f"models--{self.text_model_id.replace('/', '--')}").exists()
+            use_local_only = model_cache_exists
+            if use_local_only:
+                print("Using cached files only (no network access)")
+        else:
+            print("Loading model from default cache: ~/.cache/huggingface")
+            use_local_only = False
+
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.text_model_id,
-            cache_dir=self.model_cache_dir
+            cache_dir=self.model_cache_dir,
+            local_files_only=use_local_only
         )
         self.text_model = T5ForConditionalGeneration.from_pretrained(
             self.text_model_id,
             device_map=self.device,
             torch_dtype=torch.bfloat16,
-            cache_dir=self.model_cache_dir
+            cache_dir=self.model_cache_dir,
+            local_files_only=use_local_only
         ).requires_grad_(False)
         assert self.embed_dim == self.text_model.config.d_model
 

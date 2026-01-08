@@ -51,7 +51,7 @@ SURPRISAL_LOSS_WEIGHT=0.3
 # Training
 # Per-GPU batch size (global batch size = BATCH_SIZE × number of GPUs)
 # Example: 32 per GPU × 8 GPUs = 256 global batch size
-BATCH_SIZE=64
+BATCH_SIZE=72
 VAL_BATCH_SIZE=24
 MAX_EPOCHS=50
 # Base learning rate for single GPU

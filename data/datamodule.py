@@ -139,13 +139,14 @@ class GLIMSampler(DistributedSampler):
     A batch sampler for train/val/test GLIM on `ZuCo1` + `ZuCo2`.  
     It samples batches by the `text` rather than `eeg-text pair` to make sure the `clip loss` works properly
     '''
-    def __init__(self, 
-                 dataset: Dataset, 
+    def __init__(self,
+                 dataset: Dataset,
                  identifiers: list,
                  phase: Literal['train', 'val', 'test'],
                  batch_size: int,
                  num_replicas = None,
                  rank = None,
+                 drop_last = None,
                  ) -> None:
         if (num_replicas is None) and (not dist.is_initialized()):
             self.dataset = dataset
@@ -158,7 +159,13 @@ class GLIMSampler(DistributedSampler):
             # set 4 attributes inside: self.dataset, self.num_replicas, self.rank, self.epoch, self.seed
             del self.num_samples
             del self.total_size
-        self.shuffle, self.drop_last = (True, True) if phase == 'train' else (False, True) 
+
+        # Use provided drop_last if given, otherwise set based on phase
+        if drop_last is not None:
+            self.drop_last = drop_last
+            self.shuffle = (True if phase == 'train' else False)
+        else:
+            self.shuffle, self.drop_last = (True, True) if phase == 'train' else (False, True)
         # NOTE: drop_last is inevitable, see `sample_batches()`
         self.phase = phase
         self.batch_size = batch_size
@@ -299,16 +306,17 @@ class WeightedGLIMSampler(GLIMSampler):
     A weighted batch sampler for train GLIM that applies class balancing based on classification labels.
     Extends GLIMSampler to maintain the text-based sampling while applying weights for class imbalance.
     '''
-    def __init__(self, 
-                 dataset: Dataset, 
+    def __init__(self,
+                 dataset: Dataset,
                  identifiers: list,
                  classification_labels: list,
                  phase: Literal['train', 'val', 'test'],
                  batch_size: int,
                  num_replicas = None,
                  rank = None,
+                 drop_last = None,
                  ) -> None:
-        super().__init__(dataset, identifiers, phase, batch_size, num_replicas, rank)
+        super().__init__(dataset, identifiers, phase, batch_size, num_replicas, rank, drop_last)
         
         # Compute sample weights based on classification labels
         self.sample_weights = self._compute_sample_weights(classification_labels)

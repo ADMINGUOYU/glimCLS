@@ -524,7 +524,7 @@ def main():
 
         # Save the bash script for reproducibility
         bash_script_path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                                        'train_script', 'run_train_glim_parallel.sh')
+                                        'run_script', 'run_train_glim_parallel.sh')
         if os.path.exists(bash_script_path):
             shutil.copy2(bash_script_path, os.path.join(run_dir, 'run_train_glim_parallel.sh'))
             print(f"Saved training script to: {os.path.join(run_dir, 'run_train_glim_parallel.sh')}")
@@ -762,7 +762,7 @@ def main():
         log_every_n_steps=10,
         val_check_interval=1.0,
         deterministic=True,
-        use_distributed_sampler=True,  # Enable Lightning's distributed sampler
+        use_distributed_sampler=False,  # Custom samplers already handle distributed training
         sync_batchnorm=True  # Synchronize BatchNorm statistics across GPUs
     )
     
