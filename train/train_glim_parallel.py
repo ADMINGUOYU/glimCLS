@@ -624,9 +624,42 @@ def main():
     callbacks = [
         ModelCheckpoint(
             dirpath=checkpoint_dir,
-            filename='model-epoch{epoch:02d}-acc{val/accuracy:.4f}',
-            monitor='val/accuracy',
+            filename='model-epoch{epoch:02d}-acc_sentiment{val/acc_sentiment:.4f}',
+            monitor='val/acc_sentiment',
             mode='max',
+            save_top_k=3,
+            save_last=True,
+            verbose=True,
+            enable_version_counter=False,
+            auto_insert_metric_name=False
+        ),
+        ModelCheckpoint(
+            dirpath=checkpoint_dir,
+            filename='model-epoch{epoch:02d}-acc_topic{val/acc_topic:.4f}',
+            monitor='val/acc_topic',
+            mode='max',
+            save_top_k=3,
+            save_last=True,
+            verbose=True,
+            enable_version_counter=False,
+            auto_insert_metric_name=False
+        ),
+        ModelCheckpoint(
+            dirpath=checkpoint_dir,
+            filename='model-epoch{epoch:02d}-loss_length{val/mae_length:.4f}',
+            monitor='val/mae_length',
+            mode='min',
+            save_top_k=3,
+            save_last=True,
+            verbose=True,
+            enable_version_counter=False,
+            auto_insert_metric_name=False
+        ),
+        ModelCheckpoint(
+            dirpath=checkpoint_dir,
+            filename='model-epoch{epoch:02d}-loss_surprisal{val/mae_surprisal:.4f}',
+            monitor='val/mae_surprisal',
+            mode='min',
             save_top_k=3,
             save_last=True,
             verbose=True,
