@@ -40,6 +40,7 @@ class GLIM_PARALLEL(L.LightningModule):
                  hidden_dim: int = 128,
                  embed_dim: int = 1024,
                  text_model_id: SUPPORTED_TEXT_MODELS = "google/flan-t5-large",
+                 model_cache_dir: str = None,
                  prompt_nums: tuple = (3, 3, 31),
                  prompt_dropout_probs: tuple = (0.0, 0.0, 0.0),
                  evaluate_prompt_embed: Literal['zero', 'sum', 'mean', 'src'] = 'src',
@@ -99,6 +100,7 @@ class GLIM_PARALLEL(L.LightningModule):
         self.use_prompt = use_prompt
         self.embed_dim = embed_dim
         self.text_model_id = text_model_id
+        self.model_cache_dir = model_cache_dir
         self.batch_size = batch_size
 
         # Loss weights
@@ -178,11 +180,15 @@ class GLIM_PARALLEL(L.LightningModule):
     def setup(self, stage):
         """Setup the text model (T5) using bfloat16 by default."""
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
-        self.tokenizer = AutoTokenizer.from_pretrained(self.text_model_id)
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            self.text_model_id,
+            cache_dir=self.model_cache_dir
+        )
         self.text_model = T5ForConditionalGeneration.from_pretrained(
             self.text_model_id,
             device_map=self.device,
             torch_dtype=torch.bfloat16,
+            cache_dir=self.model_cache_dir
         ).requires_grad_(False)
         assert self.embed_dim == self.text_model.config.d_model
 

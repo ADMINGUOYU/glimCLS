@@ -34,6 +34,7 @@ from lightning.pytorch.callbacks import (
 from data.datamodule import GLIMDataModule
 from model.glim_parallel import GLIM_PARALLEL
 
+torch.set_float32_matmul_precision('medium')
 
 def is_main_process():
     """Check if this is the main process (rank 0) in distributed training."""
@@ -140,6 +141,12 @@ def parse_args():
         default='google/flan-t5-large',
         choices=SUPPORTED_TEXT_MODELS,
         help='Pre-trained text model to use'
+    )
+    parser.add_argument(
+        '--model_cache_dir',
+        type=str,
+        default=None,
+        help='Directory to cache downloaded model weights (avoids re-downloading on AFS restart)'
     )
     parser.add_argument(
         '--hidden_dim',
@@ -610,6 +617,7 @@ def main():
             hidden_dim=args.hidden_dim,
             embed_dim=args.embed_dim,
             text_model_id=args.text_model,
+            model_cache_dir=args.model_cache_dir,
             n_in_blocks=args.n_in_blocks,
             n_out_blocks=args.n_out_blocks,
             num_heads=args.num_heads,

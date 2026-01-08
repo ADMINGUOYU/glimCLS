@@ -23,6 +23,13 @@ TOPIC_LABELS=("Biographies and Factual Knowledge" "Movie Reviews and Sentiment")
 
 # Model Architecture
 TEXT_MODEL="google/flan-t5-large"
+
+# Model Cache Directory
+# Set to empty string "" to use default Hugging Face cache (~/.cache/huggingface)
+# Set to a persistent path on AFS to avoid re-downloading weights on restart
+MODEL_CACHE_DIR="/mnt/afs/250010218/hf_cache"
+# MODEL_CACHE_DIR="" # Use default cache
+
 HIDDEN_DIM=128
 EMBED_DIM=1024
 N_IN_BLOCKS=6
@@ -44,7 +51,7 @@ SURPRISAL_LOSS_WEIGHT=0.3
 # Training
 # Per-GPU batch size (global batch size = BATCH_SIZE × number of GPUs)
 # Example: 32 per GPU × 8 GPUs = 256 global batch size
-BATCH_SIZE=32
+BATCH_SIZE=64
 VAL_BATCH_SIZE=24
 MAX_EPOCHS=50
 # Base learning rate for single GPU
@@ -58,12 +65,21 @@ SEED=42
 USE_ZUCO1_ONLY=ture
 USE_CHANNEL_WEIGHTS=false
 
-# Hardware
+# Hardware multi-GPU settings
 ACCELERATOR="gpu"
 STRATEGY="ddp"
 DEVICE=(0 1 2 3 4 5 6 7)  # 8 GPUs
 PRECISION="bf16-mixed"
 NUM_WORKERS=4
+
+# Hardware single-GPU settings
+# ACCELERATOR="gpu"
+# STRATEGY="auto"       
+# DEVICE=(0)            
+# PRECISION="bf16-mixed"
+# NUM_WORKERS=4
+
+
 
 # Logging
 LOG_DIR="./logs"
@@ -114,7 +130,8 @@ python -m train.train_glim_parallel \
     --seed $SEED \
     --num_workers $NUM_WORKERS \
     ${USE_ZUCO1_ONLY:+--use_zuco1_only} \
-    ${USE_CHANNEL_WEIGHTS:+--use_channel_weights}
+    ${USE_CHANNEL_WEIGHTS:+--use_channel_weights} \
+    ${MODEL_CACHE_DIR:+--model_cache_dir "$MODEL_CACHE_DIR"}
 
 # Optional flags (uncomment as needed):
 # --do_not_use_prompt    # Disable prompt embeddings
