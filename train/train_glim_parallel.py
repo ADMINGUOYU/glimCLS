@@ -527,10 +527,10 @@ def main():
     else:
         effective_batch_size = args.batch_size
 
-    # Apply linear LR scaling for multi-GPU if enabled
+    # Apply square root LR scaling for multi-GPU if enabled
     if args.use_scaled_lr and is_ddp and num_devices > 1:
         base_lr = args.lr
-        scaled_lr = base_lr * num_devices
+        scaled_lr = base_lr * (num_devices ** 0.5)
         args.lr = scaled_lr
         if is_main_process():
             print(f"\n{'='*80}")
@@ -540,7 +540,7 @@ def main():
             print(f"Per-GPU batch size: {args.batch_size}")
             print(f"Effective global batch size: {effective_batch_size}")
             print(f"Base LR: {base_lr}")
-            print(f"Scaled LR (linear scaling): {scaled_lr}")
+            print(f"Scaled LR (square root scaling): {scaled_lr}")
             print(f"{'='*80}\n")
     elif is_ddp and num_devices > 1:
         if is_main_process():
