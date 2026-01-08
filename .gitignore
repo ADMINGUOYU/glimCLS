@@ -7,7 +7,10 @@ zuco_data/
 *.hdf5
 *.mat
 
+# dataset
 data/zuco_preprocessed_dataframe/
+data/ZUCO1-2_FOR_GLIMCLS
+
 
 # Python
 __pycache__/
