@@ -65,6 +65,7 @@ temp/
 # Path to symbolic links
 /datasets
 /data/zuco_preprocessed_dataframe
+/logs
 
 # testfile
 test.py
