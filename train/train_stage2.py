@@ -297,16 +297,16 @@ def save_checkpoint(epoch, val_loss, train_loss, model, optimizer, args, checkpo
     checkpoint_tracker.append((val_loss, epoch, checkpoint_path))
     checkpoint_tracker.sort(key=lambda x: x[0])  # Sort by loss (ascending)
 
+    # Save last checkpoint
+    last_path = os.path.join(checkpoint_dir, "last.pt")
+    shutil.copy(checkpoint_path, last_path)
+
     # Remove old checkpoints beyond top-k
     if len(checkpoint_tracker) > max_checkpoints:
         _, _, old_path = checkpoint_tracker.pop()
         if os.path.exists(old_path):
             os.remove(old_path)
             print(f"Removed old checkpoint: {old_path}")
-
-    # Save last checkpoint
-    last_path = os.path.join(checkpoint_dir, "last.pt")
-    shutil.copy(checkpoint_path, last_path)
 
     return checkpoint_path
 
