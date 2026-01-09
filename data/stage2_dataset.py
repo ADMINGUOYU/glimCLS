@@ -13,7 +13,9 @@ TOPIC_LABELS = ['Biographies and Factual Knowledge', 'Movie Reviews and Sentimen
 class Stage2ReconstructionDataset(Dataset):
     """
     Dataset for Stage 2 text reconstruction training.
-    Loads EEG features and labels from a pandas DataFrame (output from predict_glim_parallel_and_pack.py).
+    Loads EEG features and labels from a pandas DataFrame 
+    (output from predict_glim_parallel_and_pack.py).
+    -> to be checked
     """
 
     def __init__(
@@ -68,7 +70,7 @@ class Stage2ReconstructionDataset(Dataset):
         if label in self.sentiment_to_idx:
             return self.sentiment_to_idx[label]
         # Handle potential label variations
-        label_lower = label. lower()
+        label_lower = label.lower()
         for key, idx in self.sentiment_to_idx.items():
             if key.lower() == label_lower:
                 return idx
@@ -78,11 +80,11 @@ class Stage2ReconstructionDataset(Dataset):
 
     def _convert_topic_to_idx(self, label: str) -> int:
         """Convert topic label string to index."""
-        if label in self. topic_to_idx:
+        if label in self.topic_to_idx:
             return self.topic_to_idx[label]
         # Handle potential label variations
         label_lower = label.lower()
-        for key, idx in self. topic_to_idx.items():
+        for key, idx in self.topic_to_idx.items():
             if key.lower() == label_lower: 
                 return idx
         # Default to first class if unknown
@@ -92,7 +94,7 @@ class Stage2ReconstructionDataset(Dataset):
     def __getitem__(self, idx:  int) -> Dict: 
         # Get EEG features
         ei = self.ei[idx]
-        Zi = self. Zi[idx]
+        Zi = self.Zi[idx]
         
         # Convert to tensors if numpy arrays
         if hasattr(ei, 'shape'):
@@ -110,7 +112,7 @@ class Stage2ReconstructionDataset(Dataset):
         Zi = Zi.float()
         
         # Get labels as indices
-        label_task1 = self._convert_sentiment_to_idx(self. sentiment_labels_raw[idx])
+        label_task1 = self._convert_sentiment_to_idx(self.sentiment_labels_raw[idx])
         label_task2 = self._convert_topic_to_idx(self.topic_labels_raw[idx])
         
         # Get target text (using 'input text' for now)
@@ -120,8 +122,8 @@ class Stage2ReconstructionDataset(Dataset):
             'label_task1': label_task1,
             'label_task2': label_task2,
             'ei': ei,
-            'Zi':  Zi,
-            'target_text':  target_text
+            'Zi': Zi,
+            'target_text': target_text
         }
 
 
@@ -164,7 +166,7 @@ def create_stage2_dataloaders(
     Returns: 
         train_loader, val_loader, test_loader
     """
-    print(f"Loading data from:  {data_path}")
+    print(f"Loading data from: {data_path}")
     df = pd.read_pickle(data_path)
     print(f"Total samples: {len(df)}")
     
