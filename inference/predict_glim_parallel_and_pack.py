@@ -5,7 +5,12 @@ Multi-Checkpoint Prediction Script for GLIM_PARALLEL
 This script loads 4 separate checkpoints (best models for sentiment, topic, length, surprisal)
 and generates predictions on the entire dataset. All predictions are saved to a pandas DataFrame.
 
-TODO: to compact with a single ckpt
+Optionally, use --single_checkpoint to use one checkpoint for all tasks and run prediction only once.
+!!! WARNING: using 4 checkpoints is severely memory consuming !!!
+
+Tips: Duplicated code -> predict_all_tasks_with_single_model()
+                         and
+                         predict_with_model()
 
 """
 
@@ -37,29 +42,37 @@ def parse_args():
         help="Path to the merged dataframe (e.g., zuco_merged_with_topic.df)"
     )
     
-    # Checkpoint arguments
+    # Single checkpoint mode
+    parser.add_argument(
+        "--single_checkpoint",
+        type=str,
+        default=None,
+        help="Path to a single checkpoint to use for all tasks. When set, prediction runs only once."
+    )
+    
+    # Checkpoint arguments (only required when not using single_checkpoint)
     parser.add_argument(
         "--sentiment_checkpoint",
         type=str,
-        required=True,
+        default=None,
         help="Path to the best checkpoint for sentiment classification"
     )
     parser.add_argument(
         "--topic_checkpoint",
         type=str,
-        required=True,
+        default=None,
         help="Path to the best checkpoint for topic classification"
     )
     parser.add_argument(
         "--length_checkpoint",
         type=str,
-        required=True,
+        default=None,
         help="Path to the best checkpoint for length prediction"
     )
     parser.add_argument(
         "--surprisal_checkpoint",
         type=str,
-        required=True,
+        default=None,
         help="Path to the best checkpoint for surprisal prediction"
     )
     
@@ -68,7 +81,7 @@ def parse_args():
         "--output_path",
         type=str,
         default=None,
-        help="Path to save the predictions DataFrame.  Defaults to predictions_<timestamp>.df"
+        help="Path to save the predictions DataFrame. Defaults to predictions_<timestamp>.df"
     )
     
     # Device arguments
@@ -96,7 +109,17 @@ def parse_args():
         help="Which data split to predict on (default: all)"
     )
     
-    return parser.parse_args()
+    args = parser.parse_args()
+    
+    # Validate arguments
+    if args.single_checkpoint is None: 
+        # Multi-checkpoint mode:  all checkpoints are required
+        if not all([args.sentiment_checkpoint, args.topic_checkpoint, 
+                    args.length_checkpoint, args.surprisal_checkpoint]):
+            parser.error("When not using --single_checkpoint, all four checkpoint arguments are required: "
+                        "--sentiment_checkpoint, --topic_checkpoint, --length_checkpoint, --surprisal_checkpoint")
+    
+    return args
 
 
 def load_model_from_checkpoint(checkpoint_path: str, device: torch.device) -> GLIM_PARALLEL:
@@ -247,6 +270,65 @@ def predict_with_model(
     return combined
 
 
+def predict_all_tasks_with_single_model(
+    model: GLIM_PARALLEL,
+    dataloader,
+    device: torch.device,
+) -> dict:
+    """
+    Run predictions for ALL tasks using a single model in one pass.
+    
+    Args:
+        model: The GLIM_PARALLEL model
+        dataloader: DataLoader to iterate over
+        device: Target device
+        
+    Returns:
+        Dictionary of predictions for all tasks (indexed by 'text uid')
+    """
+    all_predictions = []
+    
+    with torch.no_grad():
+        for batch in tqdm(dataloader, desc="Predicting all tasks (single pass)"):
+
+            prepared_batch = prepare_batch_for_prediction(batch, device)
+            outputs = model.predict_step(prepared_batch, 0)     # 0 is batch_idx -> not used param
+            
+            preds = {
+                # Sentiment predictions
+                'sentiment_pred_idx': outputs['sentiment_pred'].cpu().numpy(),
+                'sentiment_pred_label': outputs['sentiment_label'],
+                'sentiment_pred_prob': outputs['sentiment_prob'].cpu().numpy(),
+                # Topic predictions
+                'topic_pred_idx': outputs['topic_pred'].cpu().numpy(),
+                'topic_pred_label':  outputs['topic_label'],
+                'topic_pred_prob':  outputs['topic_prob'].cpu().numpy(),
+                # Length predictions
+                'length_pred_value': outputs['length_pred'].cpu().numpy(),
+                # Surprisal predictions
+                'surprisal_pred_value': outputs['surprisal_pred'].cpu().numpy(),
+                # Text UID for merging
+                'text_uid': batch['text uid'] if isinstance(batch['text uid'], list) else batch['text uid'].tolist(),
+                # Embeddings
+                'ei': outputs['eeg_emb'].cpu().numpy(),
+                'Zi': outputs['Zi'].cpu().numpy(),
+            }
+
+            all_predictions.append(preds)
+    
+    # Combine all predictions
+    combined = {}
+    for key in all_predictions[0].keys():
+        if isinstance(all_predictions[0][key], np.ndarray):
+            combined[key] = np.concatenate([p[key] for p in all_predictions])
+        else: 
+            combined[key] = []
+            for p in all_predictions: 
+                combined[key].extend(p[key])
+    
+    return combined
+
+
 def create_prediction_dataloader(df: pd.DataFrame, split: str, batch_size: int):
     """
     Create a simple dataloader for predictions (without the complex sampling).
@@ -351,15 +433,27 @@ def main():
     device = torch.device(f"cuda:{args.device}" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
     
-    # Validate checkpoint paths
-    for name, path in [
-        ("sentiment", args.sentiment_checkpoint),
-        ("topic", args.topic_checkpoint),
-        ("length", args.length_checkpoint),
-        ("surprisal", args.surprisal_checkpoint),
-    ]:
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"{name} checkpoint not found:  {path}")
+    # Determine mode
+    single_checkpoint_mode = args.single_checkpoint is not None
+    
+    if single_checkpoint_mode:
+        print(f"\n{'='*60}")
+        print("SINGLE CHECKPOINT MODE")
+        print(f"Using checkpoint: {args.single_checkpoint}")
+        print(f"{'='*60}")
+        
+        if not os.path.exists(args.single_checkpoint):
+            raise FileNotFoundError(f"Single checkpoint not found: {args.single_checkpoint}")
+    else:
+        # Validate checkpoint paths
+        for name, path in [
+            ("sentiment", args.sentiment_checkpoint),
+            ("topic", args.topic_checkpoint),
+            ("length", args.length_checkpoint),
+            ("surprisal", args.surprisal_checkpoint),
+        ]:
+            if not os.path.exists(path):
+                raise FileNotFoundError(f"{name} checkpoint not found:  {path}")
     
     # Load data
     print(f"Loading data from:  {args.data_path}")
@@ -382,43 +476,74 @@ def main():
         'surprisal': df_split['surprisal'].tolist() if 'surprisal' in df_split.columns else [None] * len(df_split),
     })
     
-    # Load and predict with each checkpoint
-    checkpoint_tasks = [
-        ('sentiment', args.sentiment_checkpoint),
-        ('topic', args.topic_checkpoint),
-        ('length', args.length_checkpoint),
-        ('surprisal', args.surprisal_checkpoint),
-    ]
-    
-    for task, checkpoint_path in checkpoint_tasks: 
-        print(f"\n{'='*60}")
-        print(f"Processing {task.upper()} predictions")
-        print(f"{'='*60}")
+    if single_checkpoint_mode:
+        # Single checkpoint mode: load once, predict once for all tasks
+        model = load_model_from_checkpoint(args.single_checkpoint, device)
         
-        # Load model
-        model = load_model_from_checkpoint(checkpoint_path, device)
+        predictions = predict_all_tasks_with_single_model(model, dataloader, device)
         
-        # Run predictions
-        predictions = predict_with_model(model, dataloader, device, task)
-
-        # Store ei and Zi
-        if 'ei' not in results.columns:
-            results['ei'] = [ei.tolist() for ei in predictions['ei']]
-        if 'Zi' not in results.columns:
-            results['Zi'] = [Zi.tolist() for Zi in predictions['Zi']]
-
-        # Add predictions to results
-        if task in ['sentiment', 'topic']: 
-            results[f'pred_{task}_label'] = predictions['pred_label']
-            results[f'pred_{task}_idx'] = predictions['pred_idx']
-            # Store probabilities as list of arrays
-            results[f'pred_{task}_prob'] = [prob.tolist() for prob in predictions['pred_prob']]
-        else:
-            results[f'pred_{task}'] = predictions['pred_value']
+        # Store embeddings
+        results['ei'] = [ei.tolist() for ei in predictions['ei']]
+        results['Zi'] = [Zi.tolist() for Zi in predictions['Zi']]
+        
+        # Store sentiment predictions
+        results['pred_sentiment_label'] = predictions['sentiment_pred_label']
+        results['pred_sentiment_idx'] = predictions['sentiment_pred_idx']
+        results['pred_sentiment_prob'] = [prob.tolist() for prob in predictions['sentiment_pred_prob']]
+        
+        # Store topic predictions
+        results['pred_topic_label'] = predictions['topic_pred_label']
+        results['pred_topic_idx'] = predictions['topic_pred_idx']
+        results['pred_topic_prob'] = [prob.tolist() for prob in predictions['topic_pred_prob']]
+        
+        # Store length predictions
+        results['pred_length'] = predictions['length_pred_value']
+        
+        # Store surprisal predictions
+        results['pred_surprisal'] = predictions['surprisal_pred_value']
         
         # Clear model from memory
         del model
         torch.cuda.empty_cache()
+        
+    else:
+        # Multi-checkpoint mode:  load and predict with each checkpoint
+        checkpoint_tasks = [
+            ('sentiment', args.sentiment_checkpoint),
+            ('topic', args.topic_checkpoint),
+            ('length', args.length_checkpoint),
+            ('surprisal', args.surprisal_checkpoint),
+        ]
+        
+        for task, checkpoint_path in checkpoint_tasks: 
+            print(f"\n{'='*60}")
+            print(f"Processing {task.upper()} predictions")
+            print(f"{'='*60}")
+            
+            # Load model
+            model = load_model_from_checkpoint(checkpoint_path, device)
+            
+            # Run predictions
+            predictions = predict_with_model(model, dataloader, device, task)
+
+            # Store ei and Zi
+            if 'ei' not in results.columns:
+                results['ei'] = [ei.tolist() for ei in predictions['ei']]
+            if 'Zi' not in results.columns:
+                results['Zi'] = [Zi.tolist() for Zi in predictions['Zi']]
+
+            # Add predictions to results
+            if task in ['sentiment', 'topic']: 
+                results[f'pred_{task}_label'] = predictions['pred_label']
+                results[f'pred_{task}_idx'] = predictions['pred_idx']
+                # Store probabilities as list of arrays
+                results[f'pred_{task}_prob'] = [prob.tolist() for prob in predictions['pred_prob']]
+            else:
+                results[f'pred_{task}'] = predictions['pred_value']
+            
+            # Clear model from memory
+            del model
+            torch.cuda.empty_cache()
     
     # Set output path
     if args.output_path is None:
