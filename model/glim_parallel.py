@@ -548,8 +548,8 @@ class GLIM_PARALLEL(L.LightningModule):
         })
 
         self.log('val/loss', output['total_loss'], prog_bar=True, sync_dist=True)
-        self.log('val/acc_sentiment', output['acc_sentiment'], prog_bar=True, sync_dist=True)
-        self.log('val/acc_topic', output['acc_topic'], prog_bar=True, sync_dist=True)
+        self.log('val/acc_sentiment', output['acc_sentiment'], sync_dist=True)
+        self.log('val/acc_topic', output['acc_topic'], sync_dist=True)
         self.log('val/mae_length', output['mae_length'], sync_dist=True)
         self.log('val/mae_surprisal', output['mae_surprisal'], sync_dist=True)
 
