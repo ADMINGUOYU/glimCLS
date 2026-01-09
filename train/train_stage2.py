@@ -12,7 +12,8 @@ from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from data.mock_dataset import create_dataloaders
+from data.mock_dataset import create_dataloaders as create_mock_dataloaders
+from data.stage2_dataset import create_stage2_dataloaders
 from model.stage2_model import Stage2ReconstructionModel
 
 
@@ -58,16 +59,45 @@ def parse_args():
 
     # Data arguments
     parser.add_argument(
+        '--data_path',
+        type=str,
+        default=None,
+        help='Path to the pandas DataFrame pickle file (e.g., stage2.df from predict_glim_parallel_and_pack. py). '
+             'If not provided, uses mock data.'
+    )
+    parser.add_argument(
         '--data_size',
         type=int,
         default=1000,
-        help='Number of mock samples to generate'
+        help='Number of mock samples to generate (only used when --data_path is not provided)'
     )
     parser.add_argument(
         '--batch_size',
         type=int,
         default=8,
         help='Batch size for training'
+    )
+    parser.add_argument(
+        '--num_workers',
+        type=int,
+        default=0,
+        help='Number of workers for data loading'
+    )
+
+    # Label arguments
+    parser.add_argument(
+        '--sentiment_labels',
+        type=str,
+        nargs='+',
+        default=['non_neutral', 'neutral'],
+        help='Sentiment label names (space-separated)'
+    )
+    parser.add_argument(
+        '--topic_labels',
+        type=str,
+        nargs='+',
+        default=['Biographies and Factual Knowledge', 'Movie Reviews and Sentiment'],
+        help='Topic label names (space-separated)'
     )
 
     # Model arguments
@@ -302,7 +332,7 @@ def main():
 
     # Save the bash script for reproducibility
     bash_script_path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                                    'train_script', 'run_stage2.sh')
+                                    'run_script', 'run_stage2.sh')
     if os.path.exists(bash_script_path):
         shutil.copy2(bash_script_path, os.path.join(run_dir, 'run_stage2.sh'))
         print(f"Saved training script to: {os.path.join(run_dir, 'run_stage2.sh')}")
@@ -314,12 +344,19 @@ def main():
     sys.stdout = TeeLogger(log_file, sys.stdout)
     sys.stderr = TeeLogger(error_log_file, sys.stderr)
 
+    # Determine number of classes
+    num_sentiment_classes = len(args.sentiment_labels)
+    num_topic_classes = len(args.topic_labels)
+
     # Print configuration
     print("=" * 80)
     print("Stage 2 Training Configuration")
     print("=" * 80)
     print(f"Run directory: {run_dir}")
-    print(f"Data size: {args.data_size}")
+    if args.data_path:
+        print(f"Data path: {args.data_path}")
+    else:
+        print(f"Data: Mock dataset with {args.data_size} samples")
     print(f"Batch size: {args.batch_size}")
     print(f"Text model: {args.text_model}")
     print(f"Freeze strategy: {args.freeze_strategy}")
@@ -328,15 +365,28 @@ def main():
     print(f"Learning rate: {args.lr} (max), {args.min_lr} (min)")
     print(f"Warmup epochs: {args.warmup_epochs}")
     print(f"Device: {args.device}")
+    print(f"Sentiment labels ({num_sentiment_classes}): {args.sentiment_labels}")
+    print(f"Topic labels ({num_topic_classes}): {args.topic_labels}")
     print("=" * 80)
 
     # Create dataloaders
     print("\nCreating dataloaders...")
-    train_loader, val_loader, test_loader = create_dataloaders(
-        data_size=args.data_size,
-        batch_size=args.batch_size,
-        seed=args.seed
-    )
+    if args.data_path:
+        # Use real dataset from DataFrame
+        train_loader, val_loader, test_loader = create_stage2_dataloaders(
+            data_path=args.data_path,
+            batch_size=args.batch_size,
+            sentiment_labels=args.sentiment_labels,
+            topic_labels=args.topic_labels,
+            num_workers=args.num_workers
+        )
+    else:
+        # Use mock dataset
+        train_loader, val_loader, test_loader = create_mock_dataloaders(
+            data_size=args.data_size,
+            batch_size=args.batch_size,
+            seed=args.seed
+        )
     print(f"Train samples: {len(train_loader.dataset)}")
     print(f"Val samples: {len(val_loader.dataset)}")
     print(f"Test samples: {len(test_loader.dataset)}")

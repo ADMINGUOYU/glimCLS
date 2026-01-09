@@ -14,6 +14,18 @@
 # CONFIGURATION PARAMETERS
 # ============================================================================
 
+# Data
+# Set DATA_PATH to use real dataset, leave empty ("") for mock data
+DATA_PATH=""  # e.g., "./data/zuco_preprocessed_dataframe/stage2.df"
+DATA_SIZE=3000  # Only used when DATA_PATH is empty (mock data)
+BATCH_SIZE=8
+NUM_WORKERS=4
+SEED=42
+
+# Label configuration (only used when DATA_PATH is set)
+SENTIMENT_LABELS=("non_neutral" "neutral")
+TOPIC_LABELS=("Biographies and Factual Knowledge" "Movie Reviews and Sentiment")
+
 # Model Architecture
 TEXT_MODEL="google/flan-t5-large"
 FREEZE_STRATEGY="full_freeze_llm"  # Options: "lora" or "full_freeze_llm"
@@ -23,11 +35,6 @@ LORA_RANK=8
 # Leave empty ("") to use random initialization
 # Provide path to checkpoint containing pre-trained label embeddings
 LABEL_EMBED_INIT=""
-
-# Data
-DATA_SIZE=3000
-BATCH_SIZE=8
-SEED=42
 
 # Training
 MAX_EPOCHS=10
@@ -50,7 +57,14 @@ echo "Stage 2 Training Configuration:"
 echo "  Text Model: $TEXT_MODEL"
 echo "  Freeze Strategy: $FREEZE_STRATEGY"
 echo "  LoRA Rank: $LORA_RANK"
-echo "  Data Size: $DATA_SIZE"
+if [ -n "$DATA_PATH" ]; then
+    echo "  Data Path: $DATA_PATH"
+    echo "  Sentiment Labels: ${SENTIMENT_LABELS[@]}"
+    echo "  Topic Labels: ${TOPIC_LABELS[@]}"
+else
+    echo "  Data: Mock dataset"
+    echo "  Data Size: $DATA_SIZE"
+fi
 echo "  Batch Size: $BATCH_SIZE"
 echo "  Max Epochs: $MAX_EPOCHS"
 echo "  Learning Rate: $LR (max), $MIN_LR (min)"
@@ -67,8 +81,8 @@ echo
 
 # Build command with optional label embedding argument
 CMD="python -m train.train_stage2 \
-    --data_size $DATA_SIZE \
     --batch_size $BATCH_SIZE \
+    --num_workers $NUM_WORKERS \
     --max_epochs $MAX_EPOCHS \
     --lr $LR \
     --min_lr $MIN_LR \
@@ -82,6 +96,16 @@ CMD="python -m train.train_stage2 \
     --experiment_name \"$EXPERIMENT_NAME\" \
     --seed $SEED"
 
+# Add data path or data size
+if [ -n "$DATA_PATH" ]; then
+    CMD="$CMD --data_path \"$DATA_PATH\""
+    CMD="$CMD --sentiment_labels $SENTIMENT_LABELS"
+    CMD="$CMD --topic_labels $TOPIC_LABELS"
+else
+    CMD="$CMD --data_size $DATA_SIZE"
+fi
+
+# Add label embedding initialization if provided
 if [ -n "$LABEL_EMBED_INIT" ]; then
     CMD="$CMD --label_embed_init \"$LABEL_EMBED_INIT\""
 fi
