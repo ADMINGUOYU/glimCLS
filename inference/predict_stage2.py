@@ -520,7 +520,7 @@ def main():
     print(f"Batch size: {args.batch_size}")
     print(f"Max length: {args.max_length}")
     print(f"Num beams: {args.num_beams}")
-    print(f"Do sample:  {args.do_sample}")
+    print(f"Do sample: {args.do_sample}")
     print(f"Device: {device}")
     print("=" * 60)
     

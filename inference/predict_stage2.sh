@@ -29,6 +29,9 @@ TOPIC_LABELS=("Biographies and Factual Knowledge" "Movie Reviews and Sentiment")
 # Generation parameters
 MAX_LENGTH=50
 NUM_BEAMS=1          # 1 = greedy, >1 = beam search
+
+# Params suggested by claude, maybe not used at all
+# Too lazy ...
 DO_SAMPLE=false      # Set to true for sampling-based generation
 TEMPERATURE=1.0      # Only used if DO_SAMPLE=true
 TOP_K=50             # Only used if DO_SAMPLE=true
