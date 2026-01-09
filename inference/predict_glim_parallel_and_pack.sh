@@ -17,7 +17,7 @@ OUTPUT_PATH="./data/zuco_preprocessed_dataframe/stage2.df"
 mkdir -p $(dirname $OUTPUT_PATH)
 
 # Run prediction
-python ./inference/predict_glim_parallel_and_pack.py \
+python -m inference.predict_glim_parallel_and_pack \
     --data_path "$DATA_PATH" \
     --sentiment_checkpoint "$SENTIMENT_CKPT" \
     --topic_checkpoint "$TOPIC_CKPT" \
