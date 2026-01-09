@@ -403,9 +403,9 @@ def main():
 
         # Store ei and Zi
         if 'ei' not in results.columns:
-            results['ei'] = predictions['ei']
+            results['ei'] = [ei.tolist() for ei in predictions['ei']]
         if 'Zi' not in results.columns:
-            results['Zi'] = predictions['Zi']
+            results['Zi'] = [Zi.tolist() for Zi in predictions['Zi']]
 
         # Add predictions to results
         if task in ['sentiment', 'topic']: 
@@ -430,15 +430,18 @@ def main():
     print(f"Saving predictions to: {args.output_path}")
     results.to_pickle(args.output_path)
     
-    # Also save as CSV for easy viewing
-    csv_path = args.output_path.replace('.df', '.csv')
-    # For CSV, convert probability lists to strings
-    results_csv = results.copy()
-    for col in ['pred_sentiment_prob', 'pred_topic_prob']: 
-        if col in results_csv.columns:
-            results_csv[col] = results_csv[col].apply(str)
-    results_csv.to_csv(csv_path, index=False)
-    print(f"Also saved as CSV: {csv_path}")
+    """
+    WARNING: BUGGY CODE
+    """
+    # # Also save as CSV for easy viewing
+    # csv_path = args.output_path.replace('.df', '.csv')
+    # # For CSV, convert probability lists to strings
+    # results_csv = results.copy()
+    # for col in ['pred_sentiment_prob', 'pred_topic_prob', 'ei', 'Zi']: 
+    #     if col in results_csv.columns:
+    #         results_csv[col] = results_csv[col].apply(str)
+    # results_csv.to_csv(csv_path, index=False)
+    # print(f"Also saved as CSV: {csv_path}")
     
     # Print summary statistics
     print(f"\n{'='*60}")
