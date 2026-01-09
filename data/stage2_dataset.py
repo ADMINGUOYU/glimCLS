@@ -52,7 +52,7 @@ class Stage2ReconstructionDataset(Dataset):
         # Extract data
         self.ei = df['ei'].tolist()
         self.Zi = df['Zi'].tolist()
-        self.sentiment_labels_raw = df[self. sentiment_col].tolist()
+        self.sentiment_labels_raw = df[self.sentiment_col].tolist()
         self.topic_labels_raw = df[self.topic_col].tolist()
         self.target_texts = df['input text'].tolist()
         
@@ -103,7 +103,7 @@ class Stage2ReconstructionDataset(Dataset):
             ei = torch.tensor(ei)
             
         if hasattr(Zi, 'shape'):
-            Zi = torch.from_numpy(Zi) if not isinstance(Zi, torch. Tensor) else Zi
+            Zi = torch.from_numpy(Zi) if not isinstance(Zi, torch.Tensor) else Zi
         else: 
             Zi = torch.tensor(Zi)
         
@@ -181,7 +181,7 @@ def create_stage2_dataloaders(
         # Shuffle indices
         indices = df.index.tolist()
         import random
-        random. shuffle(indices)
+        random.shuffle(indices)
         
         train_indices = indices[: train_size]
         val_indices = indices[train_size:train_size + val_size]

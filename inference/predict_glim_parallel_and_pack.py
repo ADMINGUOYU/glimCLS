@@ -19,7 +19,7 @@ from tqdm import tqdm
 from datetime import datetime
 
 # Add parent directory to path for imports
-sys.path.insert(0, os. path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from model.glim_parallel import GLIM_PARALLEL
 
@@ -38,7 +38,7 @@ def parse_args():
     )
     
     # Checkpoint arguments
-    parser. add_argument(
+    parser.add_argument(
         "--sentiment_checkpoint",
         type=str,
         required=True,
@@ -314,7 +314,7 @@ class PredictionDataset(torch.utils.data.Dataset):
     
     def __getitem__(self, idx):
         return {
-            'eeg': torch.from_numpy(self. eeg[idx]),
+            'eeg': torch.from_numpy(self.eeg[idx]),
             'mask': torch.from_numpy(self.mask[idx]),
             'prompt': self.prompts[idx],
             'text uid': self.text_uids[idx],
@@ -374,11 +374,11 @@ def main():
     # copy Ground Truth / phase / text_uid ... information
     results = pd.DataFrame({
         'text uid': df_split['text uid'].tolist(),
-        'phase': df_split['phase'].tolist() if 'phase' in df_split. columns else [None] * len(df_split),
+        'phase': df_split['phase'].tolist() if 'phase' in df_split.columns else [None] * len(df_split),
         'input text': df_split['input text'].tolist() if 'input text' in df_split.columns else [None] * len(df_split),
         'sentiment label': df_split['sentiment label'].tolist() if 'sentiment label' in df_split.columns else [None] * len(df_split),
         'topic_label': df_split['topic_label'].tolist() if 'topic_label' in df_split.columns else [None] * len(df_split),
-        'length': df_split['length'].tolist() if 'length' in df_split. columns else [None] * len(df_split),
+        'length': df_split['length'].tolist() if 'length' in df_split.columns else [None] * len(df_split),
         'surprisal': df_split['surprisal'].tolist() if 'surprisal' in df_split.columns else [None] * len(df_split),
     })
     
@@ -464,13 +464,13 @@ def main():
     # Length MAE (if ground truth available)
     if 'length' in results.columns and results['length'].notna().any():
         valid_mask = results['length'].notna()
-        mae = np.abs(results. loc[valid_mask, 'length']. values - results.loc[valid_mask, 'pred_length'].values).mean()
+        mae = np.abs(results.loc[valid_mask, 'length'].values - results.loc[valid_mask, 'pred_length'].values).mean()
         print(f"Length MAE:  {mae:.4f}")
     
     # Surprisal MAE (if ground truth available)
     if 'surprisal' in results.columns and results['surprisal'].notna().any():
         valid_mask = results['surprisal'].notna()
-        mae = np.abs(results. loc[valid_mask, 'surprisal'].values - results.loc[valid_mask, 'pred_surprisal'].values).mean()
+        mae = np.abs(results.loc[valid_mask, 'surprisal'].values - results.loc[valid_mask, 'pred_surprisal'].values).mean()
         print(f"Surprisal MAE: {mae:.4f}")
     
     print(f"\nDone! Results saved to {args.output_path}")
