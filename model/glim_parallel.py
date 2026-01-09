@@ -161,6 +161,7 @@ class GLIM_PARALLEL(L.LightningModule):
 
         # Test outputs for confusion matrices
         self.test_step_outputs = {'sentiment': [], 'topic': []}
+        self.val_step_outputs = {'sentiment': [], 'topic': []}
 
         self.save_hyperparameters(logger=True)
 
@@ -533,6 +534,19 @@ class GLIM_PARALLEL(L.LightningModule):
         with torch.no_grad():
             output = self.shared_forward(batch)
 
+        # Store predictions for epoch-end accuracy computation
+        sentiment_preds = torch.argmax(output['sentiment_logits'], dim=1)
+        topic_preds = torch.argmax(output['topic_logits'], dim=1)
+
+        self.val_step_outputs['sentiment'].append({
+            'predictions': sentiment_preds.detach().cpu(),
+            'targets': output['sentiment_ids'].detach().cpu()
+        })
+        self.val_step_outputs['topic'].append({
+            'predictions': topic_preds.detach().cpu(),
+            'targets': output['topic_ids'].detach().cpu()
+        })
+
         self.log('val/loss', output['total_loss'], prog_bar=True, sync_dist=True, batch_size=self.batch_size)
         self.log('val/acc_sentiment', output['acc_sentiment'], prog_bar=True, sync_dist=True, batch_size=self.batch_size)
         self.log('val/acc_topic', output['acc_topic'], prog_bar=True, sync_dist=True, batch_size=self.batch_size)
@@ -548,6 +562,21 @@ class GLIM_PARALLEL(L.LightningModule):
         self.log('val/loss_surprisal', output['loss_surprisal'], sync_dist=True, batch_size=self.batch_size)
 
         return output['total_loss']
+
+    def on_validation_epoch_end(self):
+        """Compute correct accuracy from collected predictions."""
+        for task_name in ['sentiment', 'topic']:
+            if len(self.val_step_outputs[task_name]) == 0:
+                continue
+
+            all_preds = torch.cat([x['predictions'] for x in self.val_step_outputs[task_name]])
+            all_targets = torch.cat([x['targets'] for x in self.val_step_outputs[task_name]])
+
+            # Compute correct accuracy from collected predictions
+            correct_acc = (all_preds == all_targets).float().mean().item()
+            self.log(f'val/acc_{task_name}_correct', correct_acc, prog_bar=True, sync_dist=False)
+
+        self.val_step_outputs = {'sentiment': [], 'topic': []}
 
     def test_step(self, batch, batch_idx):
         """Test step."""
@@ -573,7 +602,7 @@ class GLIM_PARALLEL(L.LightningModule):
         return output
 
     def on_test_epoch_end(self):
-        """Compute confusion matrices for both classification tasks."""
+        """Compute confusion matrices and correct accuracy for both classification tasks."""
         for task_name in ['sentiment', 'topic']:
             if len(self.test_step_outputs[task_name]) == 0:
                 continue
@@ -581,10 +610,15 @@ class GLIM_PARALLEL(L.LightningModule):
             all_preds = torch.cat([x['predictions'] for x in self.test_step_outputs[task_name]])
             all_targets = torch.cat([x['targets'] for x in self.test_step_outputs[task_name]])
 
+            # Compute confusion matrix
             labels = list(range(len(self.classification_tasks[task_name])))
             cm = confusion_matrix(all_targets.numpy(), all_preds.numpy(), labels=labels)
-
             setattr(self, f'confusion_matrix_{task_name}', cm)
+
+            # Compute and log correct accuracy from collected predictions
+            correct_acc = (all_preds == all_targets).float().mean().item()
+            self.log(f'test/acc_{task_name}_correct', correct_acc, sync_dist=False)
+            print(f"\n[Correct Accuracy] {task_name}: {correct_acc:.4f} ({correct_acc*100:.2f}%)")
 
         self.test_step_outputs = {'sentiment': [], 'topic': []}
 
