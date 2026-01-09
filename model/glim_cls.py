@@ -1,4 +1,12 @@
 """
+=== WARNING ===
+This code has potential flaw in delegated training
+-> Cause: Batch_size for val might be different from train
+          discrepancies occur when synchronizing dict across GPUs
+!!! Use with care !!!
+"""
+
+"""
 GLIM_CLS: Combined GLIM encoder with MLP classifier for end-to-end classification.
 
 This model combines the GLIM encoder with an MLP classifier for generalized
