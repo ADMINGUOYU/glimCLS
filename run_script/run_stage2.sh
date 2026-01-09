@@ -18,7 +18,7 @@
 # Set DATA_PATH to use real dataset, leave empty ("") for mock data
 DATA_PATH=""  # e.g., "./data/zuco_preprocessed_dataframe/stage2.df"
 DATA_SIZE=3000  # Only used when DATA_PATH is empty (mock data)
-BATCH_SIZE=8
+BATCH_SIZE=72
 NUM_WORKERS=4
 SEED=42
 
@@ -99,8 +99,8 @@ CMD="python -m train.train_stage2 \
 # Add data path or data size
 if [ -n "$DATA_PATH" ]; then
     CMD="$CMD --data_path \"$DATA_PATH\""
-    CMD="$CMD --sentiment_labels $SENTIMENT_LABELS"
-    CMD="$CMD --topic_labels $TOPIC_LABELS"
+    CMD="$CMD --sentiment_labels ${SENTIMENT_LABELS[@]}"
+    CMD="$CMD --topic_labels ${TOPIC_LABELS[@]}"
 else
     CMD="$CMD --data_size $DATA_SIZE"
 fi

@@ -465,9 +465,11 @@ def main():
     print(f"Samples in '{args.split}' split: {len(df_split)}")
     
     # Initialize results DataFrame with metadata
-    # copy Ground Truth / phase / text_uid ... information
+    # copy Ground Truth / phase / text_uid / task / dataset ... information
     results = pd.DataFrame({
         'text uid': df_split['text uid'].tolist(),
+        'task': df_split['task'].tolist(),
+        'dataset': df_split['dataset'].tolist(),
         'phase': df_split['phase'].tolist() if 'phase' in df_split.columns else [None] * len(df_split),
         'input text': df_split['input text'].tolist() if 'input text' in df_split.columns else [None] * len(df_split),
         'sentiment label': df_split['sentiment label'].tolist() if 'sentiment label' in df_split.columns else [None] * len(df_split),
@@ -483,18 +485,18 @@ def main():
         predictions = predict_all_tasks_with_single_model(model, dataloader, device)
         
         # Store embeddings
-        results['ei'] = [ei.tolist() for ei in predictions['ei']]
-        results['Zi'] = [Zi.tolist() for Zi in predictions['Zi']]
+        results['ei'] = [ei for ei in predictions['ei']]
+        results['Zi'] = [Zi for Zi in predictions['Zi']]
         
         # Store sentiment predictions
         results['pred_sentiment_label'] = predictions['sentiment_pred_label']
         results['pred_sentiment_idx'] = predictions['sentiment_pred_idx']
-        results['pred_sentiment_prob'] = [prob.tolist() for prob in predictions['sentiment_pred_prob']]
+        results['pred_sentiment_prob'] = [prob for prob in predictions['sentiment_pred_prob']]
         
         # Store topic predictions
         results['pred_topic_label'] = predictions['topic_pred_label']
         results['pred_topic_idx'] = predictions['topic_pred_idx']
-        results['pred_topic_prob'] = [prob.tolist() for prob in predictions['topic_pred_prob']]
+        results['pred_topic_prob'] = [prob for prob in predictions['topic_pred_prob']]
         
         # Store length predictions
         results['pred_length'] = predictions['length_pred_value']
@@ -528,16 +530,16 @@ def main():
 
             # Store ei and Zi
             if 'ei' not in results.columns:
-                results['ei'] = [ei.tolist() for ei in predictions['ei']]
+                results['ei'] = [ei for ei in predictions['ei']]
             if 'Zi' not in results.columns:
-                results['Zi'] = [Zi.tolist() for Zi in predictions['Zi']]
+                results['Zi'] = [Zi for Zi in predictions['Zi']]
 
             # Add predictions to results
             if task in ['sentiment', 'topic']: 
                 results[f'pred_{task}_label'] = predictions['pred_label']
                 results[f'pred_{task}_idx'] = predictions['pred_idx']
                 # Store probabilities as list of arrays
-                results[f'pred_{task}_prob'] = [prob.tolist() for prob in predictions['pred_prob']]
+                results[f'pred_{task}_prob'] = [prob for prob in predictions['pred_prob']]
             else:
                 results[f'pred_{task}'] = predictions['pred_value']
             
@@ -554,6 +556,7 @@ def main():
     print(f"\n{'='*60}")
     print(f"Saving predictions to: {args.output_path}")
     results.to_pickle(args.output_path)
+    print(f"Saved with columns: {results.columns}")
     
     """
     WARNING: BUGGY CODE
