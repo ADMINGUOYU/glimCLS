@@ -519,8 +519,11 @@ def main():
     writer.add_scalar('test/perplexity', test_ppl, args.max_epochs)
 
     # Log hyperparameters with final metrics
+    # Log hyperparameters with final metrics
+    # Convert args to dict with only scalar/string values (TensorBoard add_hparams doesn't support lists)
+    hparams = {k: str(v) if isinstance(v, list) else v for k, v in vars(args).items()}
     writer.add_hparams(
-        vars(args),
+        hparams,
         {
             'hparam/best_val_loss': best_val_loss,
             'hparam/test_loss': test_loss,

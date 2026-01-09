@@ -147,6 +147,9 @@ def load_model_from_checkpoint(checkpoint_path: str, device: torch.device) -> GL
     
     # Load state dict (strict=False -> we don't have text_model weights -> let's play safe)
     model.load_state_dict(checkpoint['state_dict'], strict=False)
+
+    # Load Text Model (setup the model for ease)
+    model.setup('eval') # note that 'stage' is actually not used
     
     # Setup model (loads text model)
     model.to(device)
@@ -225,35 +228,40 @@ def predict_with_model(
         for batch in tqdm(dataloader, desc=f"Predicting {task}"):
 
             prepared_batch = prepare_batch_for_prediction(batch, device)
-            outputs = model.predict_step(prepared_batch, 0)     # 0 is batch_idx -> not used param
+            
+            with torch.amp.autocast(device_type='cuda' if device != 'cpu' else 'cpu', dtype=torch.bfloat16):
+                outputs = model.predict_step(prepared_batch, 0)     # 0 is batch_idx -> not used param
             
             if task == 'sentiment':
                 preds = {
-                    'pred_idx': outputs['sentiment_pred'].cpu().numpy(),
+                    'pred_idx': outputs['sentiment_pred'].float().cpu().numpy(),
                     'pred_label': outputs['sentiment_label'],
-                    'pred_prob': outputs['sentiment_prob'].cpu().numpy(),
+                    'pred_prob': outputs['sentiment_prob'].float().cpu().numpy(),
                 }
             elif task == 'topic': 
                 preds = {
-                    'pred_idx': outputs['topic_pred'].cpu().numpy(),
+                    'pred_idx': outputs['topic_pred'].float().cpu().numpy(),
                     'pred_label': outputs['topic_label'],
-                    'pred_prob': outputs['topic_prob'].cpu().numpy(),
+                    'pred_prob': outputs['topic_prob'].float().cpu().numpy(),
                 }
             elif task == 'length':
                 preds = {
-                    'pred_value': outputs['length_pred'].cpu().numpy(),
+                    'pred_value': outputs['length_pred'].float().cpu().numpy(),
                 }
             elif task == 'surprisal':
                 preds = {
-                    'pred_value': outputs['surprisal_pred'].cpu().numpy(),
+                    'pred_value': outputs['surprisal_pred'.float()].cpu().numpy(),
                 }
             
             # Add text_uid for merging
             preds['text_uid'] = batch['text uid'] if isinstance(batch['text uid'], list) else batch['text uid'].tolist()
             
             # Adds embeddings
-            preds['ei'] = outputs['eeg_emb'].cpu().numpy()
-            preds['Zi'] = outputs['Zi'].cpu().numpy()
+            preds['ei'] = outputs['eeg_emb'].float().cpu().numpy()
+            preds['Zi'] = outputs['Zi'].float().cpu().numpy()
+
+            # Text pred
+            preds['text_pred'] = outputs['text_pred']
 
             all_predictions.append(preds)
     
@@ -292,26 +300,30 @@ def predict_all_tasks_with_single_model(
         for batch in tqdm(dataloader, desc="Predicting all tasks (single pass)"):
 
             prepared_batch = prepare_batch_for_prediction(batch, device)
-            outputs = model.predict_step(prepared_batch, 0)     # 0 is batch_idx -> not used param
+
+            with torch.amp.autocast(device_type='cuda' if device != 'cpu' else 'cpu', dtype=torch.bfloat16):
+                outputs = model.predict_step(prepared_batch, 0)     # 0 is batch_idx -> not used param
             
             preds = {
                 # Sentiment predictions
-                'sentiment_pred_idx': outputs['sentiment_pred'].cpu().numpy(),
+                'sentiment_pred_idx': outputs['sentiment_pred'].float().cpu().numpy(),
                 'sentiment_pred_label': outputs['sentiment_label'],
-                'sentiment_pred_prob': outputs['sentiment_prob'].cpu().numpy(),
+                'sentiment_pred_prob': outputs['sentiment_prob'].float().cpu().numpy(),
                 # Topic predictions
-                'topic_pred_idx': outputs['topic_pred'].cpu().numpy(),
+                'topic_pred_idx': outputs['topic_pred'].float().cpu().numpy(),
                 'topic_pred_label':  outputs['topic_label'],
-                'topic_pred_prob':  outputs['topic_prob'].cpu().numpy(),
+                'topic_pred_prob':  outputs['topic_prob'].float().cpu().numpy(),
                 # Length predictions
-                'length_pred_value': outputs['length_pred'].cpu().numpy(),
+                'length_pred_value': outputs['length_pred'].float().cpu().numpy(),
                 # Surprisal predictions
-                'surprisal_pred_value': outputs['surprisal_pred'].cpu().numpy(),
+                'surprisal_pred_value': outputs['surprisal_pred'].float().cpu().numpy(),
                 # Text UID for merging
                 'text_uid': batch['text uid'] if isinstance(batch['text uid'], list) else batch['text uid'].tolist(),
                 # Embeddings
-                'ei': outputs['eeg_emb'].cpu().numpy(),
-                'Zi': outputs['Zi'].cpu().numpy(),
+                'ei': outputs['eeg_emb'].float().cpu().numpy(),
+                'Zi': outputs['Zi'].float().cpu().numpy(),
+                # Text pred
+                'text_pred' : outputs['text_pred']
             }
 
             all_predictions.append(preds)
@@ -503,6 +515,9 @@ def main():
         
         # Store surprisal predictions
         results['pred_surprisal'] = predictions['surprisal_pred_value']
+
+        # Store text predictions
+        results['text_pred'] = predictions['text_pred']
         
         # Clear model from memory
         del model
@@ -533,6 +548,9 @@ def main():
                 results['ei'] = [ei for ei in predictions['ei']]
             if 'Zi' not in results.columns:
                 results['Zi'] = [Zi for Zi in predictions['Zi']]
+            # Store text predictions
+            if 'text_pred' not in results.columns:
+                results['text_pred'] = predictions['text_pred']
 
             # Add predictions to results
             if task in ['sentiment', 'topic']: 
@@ -557,6 +575,13 @@ def main():
     print(f"Saving predictions to: {args.output_path}")
     results.to_pickle(args.output_path)
     print(f"Saved with columns: {results.columns}")
+    print(f"Preview results.iloc[0]:\n{results.iloc[0]}")
+
+    # Save predicted text at stage 1 to csv [DEBUG]
+    csv_path = args.output_path.replace('.df', '.csv')
+    txt_and_pred = results[['input text', 'text_pred']].copy()
+    txt_and_pred.to_csv(csv_path, index = False)
+
     
     """
     WARNING: BUGGY CODE

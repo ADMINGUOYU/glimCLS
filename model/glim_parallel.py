@@ -648,6 +648,7 @@ class GLIM_PARALLEL(L.LightningModule):
     def predict_step(self, batch, batch_idx):
         """
         Prediction step that generates all 4 predictions from EEG data. 
+        (please set up text model before use)
         
         Args:
             batch:  Dictionary containing: 
@@ -663,7 +664,9 @@ class GLIM_PARALLEL(L.LightningModule):
                 - 'topic_prob': Topic class probabilities
                 - 'length_pred': Predicted length values
                 - 'surprisal_pred':  Predicted surprisal values
-                - 'eeg_emb': EEG embeddings (for optional downstream use)
+                - 'text_pred': Predicted text
+                - 'eeg_emb': EEG embeddings (for optional downstream use) (n, e)
+                - 'Zi': EEG embeddings (n, l, e)
         """
         eeg = batch['eeg']
         if batch['mask'] is None:
@@ -705,6 +708,16 @@ class GLIM_PARALLEL(L.LightningModule):
             
             # Surprisal regression
             surprisal_pred = self.surprisal_regressor(eeg_emb).squeeze(-1)
+
+            # Text generation using Zi and text_model
+            encoder_outputs = BaseModelOutput(Zi)
+            generated_ids = self.text_model.generate(
+                num_beams = 2, 
+                encoder_outputs = encoder_outputs,
+                min_length = 0,
+                max_length = self.tgt_text_len,
+            )
+            text_pred = self.tokenizer.batch_decode(generated_ids, skip_special_tokens = True)
         
         return {
             'sentiment_pred': sentiment_pred,
@@ -715,6 +728,7 @@ class GLIM_PARALLEL(L.LightningModule):
             'topic_label': [self.classification_tasks['topic'][idx.item()] for idx in topic_pred],
             'length_pred': length_pred,
             'surprisal_pred': surprisal_pred,
+            'text_pred' : text_pred,
             'eeg_emb': eeg_emb,
             'Zi': Zi
         }
