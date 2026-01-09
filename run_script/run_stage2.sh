@@ -59,8 +59,10 @@ echo "  Freeze Strategy: $FREEZE_STRATEGY"
 echo "  LoRA Rank: $LORA_RANK"
 if [ -n "$DATA_PATH" ]; then
     echo "  Data Path: $DATA_PATH"
-    echo "  Sentiment Labels: ${SENTIMENT_LABELS[@]}"
-    echo "  Topic Labels: ${TOPIC_LABELS[@]}"
+    echo -n "  Sentiment Labels: "
+    echo "${SENTIMENT_LABELS[@]}"
+    echo -n "  Topic Labels :"
+    echo "${TOPIC_LABELS[@]}"
 else
     echo "  Data: Mock dataset"
     echo "  Data Size: $DATA_SIZE"
@@ -99,8 +101,8 @@ CMD="python -m train.train_stage2 \
 # Add data path or data size
 if [ -n "$DATA_PATH" ]; then
     CMD="$CMD --data_path \"$DATA_PATH\""
-    CMD="$CMD --sentiment_labels ${SENTIMENT_LABELS[@]}"
-    CMD="$CMD --topic_labels ${TOPIC_LABELS[@]}"
+    CMD+=(--sentiment_labels "${SENTIMENT_LABELS[@]}")
+    CMD+=(--topic_labels "${TOPIC_LABELS[@]}")
 else
     CMD="$CMD --data_size $DATA_SIZE"
 fi
