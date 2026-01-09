@@ -762,8 +762,8 @@ def main():
     callbacks = [
         ModelCheckpoint(
             dirpath=checkpoint_dir,
-            filename='model-epoch{epoch:02d}-acc_sentiment{val/acc_sentiment:.4f}',
-            monitor='val/acc_sentiment',
+            filename='model-epoch{epoch:02d}-acc_sentiment{val/acc_sentiment_correct:.4f}',
+            monitor='val/acc_sentiment_correct',
             mode='max',
             save_top_k=1,
             save_last=True,
@@ -773,8 +773,8 @@ def main():
         ),
         ModelCheckpoint(
             dirpath=checkpoint_dir,
-            filename='model-epoch{epoch:02d}-acc_topic{val/acc_topic:.4f}',
-            monitor='val/acc_topic',
+            filename='model-epoch{epoch:02d}-acc_topic{val/acc_topic_correct:.4f}',
+            monitor='val/acc_topic_correct',
             mode='max',
             save_top_k=1,
             save_last=True,

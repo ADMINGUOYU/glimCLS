@@ -547,19 +547,19 @@ class GLIM_PARALLEL(L.LightningModule):
             'targets': output['topic_ids'].detach().cpu()
         })
 
-        self.log('val/loss', output['total_loss'], prog_bar=True, sync_dist=True, batch_size=self.batch_size)
-        self.log('val/acc_sentiment', output['acc_sentiment'], prog_bar=True, sync_dist=True, batch_size=self.batch_size)
-        self.log('val/acc_topic', output['acc_topic'], prog_bar=True, sync_dist=True, batch_size=self.batch_size)
-        self.log('val/mae_length', output['mae_length'], sync_dist=True, batch_size=self.batch_size)
-        self.log('val/mae_surprisal', output['mae_surprisal'], sync_dist=True, batch_size=self.batch_size)
+        self.log('val/loss', output['total_loss'], prog_bar=True, sync_dist=True)
+        self.log('val/acc_sentiment', output['acc_sentiment'], prog_bar=True, sync_dist=True)
+        self.log('val/acc_topic', output['acc_topic'], prog_bar=True, sync_dist=True)
+        self.log('val/mae_length', output['mae_length'], sync_dist=True)
+        self.log('val/mae_surprisal', output['mae_surprisal'], sync_dist=True)
 
-        self.log('val/loss_clip', output['loss_clip'], sync_dist=True, batch_size=self.batch_size)
-        self.log('val/loss_lm', output['loss_lm'], sync_dist=True, batch_size=self.batch_size)
-        self.log('val/loss_commitment', output['loss_commitment'], sync_dist=True, batch_size=self.batch_size)
-        self.log('val/loss_sentiment', output['loss_sentiment'], sync_dist=True, batch_size=self.batch_size)
-        self.log('val/loss_topic', output['loss_topic'], sync_dist=True, batch_size=self.batch_size)
-        self.log('val/loss_length', output['loss_length'], sync_dist=True, batch_size=self.batch_size)
-        self.log('val/loss_surprisal', output['loss_surprisal'], sync_dist=True, batch_size=self.batch_size)
+        self.log('val/loss_clip', output['loss_clip'], sync_dist=True)
+        self.log('val/loss_lm', output['loss_lm'], sync_dist=True)
+        self.log('val/loss_commitment', output['loss_commitment'], sync_dist=True)
+        self.log('val/loss_sentiment', output['loss_sentiment'], sync_dist=True)
+        self.log('val/loss_topic', output['loss_topic'], sync_dist=True)
+        self.log('val/loss_length', output['loss_length'], sync_dist=True)
+        self.log('val/loss_surprisal', output['loss_surprisal'], sync_dist=True)
 
         return output['total_loss']
 
@@ -595,14 +595,16 @@ class GLIM_PARALLEL(L.LightningModule):
             'targets': output['topic_ids'].detach().cpu()
         })
 
-        self.log('test/loss', output['total_loss'], sync_dist=True, batch_size=self.batch_size)
-        self.log('test/acc_sentiment', output['acc_sentiment'], sync_dist=True, batch_size=self.batch_size)
-        self.log('test/acc_topic', output['acc_topic'], sync_dist=True, batch_size=self.batch_size)
+        self.log('test/loss', output['total_loss'], sync_dist=True)
+        self.log('test/acc_sentiment', output['acc_sentiment'], sync_dist=True)
+        self.log('test/acc_topic', output['acc_topic'], sync_dist=True)
 
         return output
 
     def on_test_epoch_end(self):
         """Compute confusion matrices and correct accuracy for both classification tasks."""
+        import torch.distributed as dist
+
         for task_name in ['sentiment', 'topic']:
             if len(self.test_step_outputs[task_name]) == 0:
                 continue
@@ -610,7 +612,24 @@ class GLIM_PARALLEL(L.LightningModule):
             all_preds = torch.cat([x['predictions'] for x in self.test_step_outputs[task_name]])
             all_targets = torch.cat([x['targets'] for x in self.test_step_outputs[task_name]])
 
-            # Compute confusion matrix
+            # Gather predictions from all GPUs in distributed training
+            if dist.is_available() and dist.is_initialized():
+                # Gather from all ranks
+                world_size = dist.get_world_size()
+                rank = dist.get_rank()
+
+                # Gather predictions
+                preds_list = [torch.zeros_like(all_preds) for _ in range(world_size)]
+                targets_list = [torch.zeros_like(all_targets) for _ in range(world_size)]
+
+                dist.all_gather(preds_list, all_preds)
+                dist.all_gather(targets_list, all_targets)
+
+                # Concatenate all gathered predictions
+                all_preds = torch.cat(preds_list)
+                all_targets = torch.cat(targets_list)
+
+            # Compute confusion matrix (on all ranks, but only display on rank 0)
             labels = list(range(len(self.classification_tasks[task_name])))
             cm = confusion_matrix(all_targets.numpy(), all_preds.numpy(), labels=labels)
             setattr(self, f'confusion_matrix_{task_name}', cm)
@@ -618,7 +637,11 @@ class GLIM_PARALLEL(L.LightningModule):
             # Compute and log correct accuracy from collected predictions
             correct_acc = (all_preds == all_targets).float().mean().item()
             self.log(f'test/acc_{task_name}_correct', correct_acc, sync_dist=False)
-            print(f"\n[Correct Accuracy] {task_name}: {correct_acc:.4f} ({correct_acc*100:.2f}%)")
+
+            # Only print on main process
+            if not dist.is_initialized() or dist.get_rank() == 0:
+                print(f"\n[Correct Accuracy] {task_name}: {correct_acc:.4f} ({correct_acc*100:.2f}%)")
+                print(f"  Total samples: {len(all_targets)}")
 
         self.test_step_outputs = {'sentiment': [], 'topic': []}
 
