@@ -148,6 +148,10 @@ def load_model_from_checkpoint(checkpoint_path: str, device: torch.device) -> GL
     # Load state dict (strict=False -> we don't have text_model weights -> let's play safe)
     model.load_state_dict(checkpoint['state_dict'], strict=False)
 
+    # If you wanna override T5 cache directory, override it here
+    # TODO: could be better
+    # model.model_cache_dir = './data/zuco_preprocessed_dataframe'
+
     # Load Text Model (setup the model for ease)
     model.setup('eval') # note that 'stage' is actually not used
     
@@ -482,6 +486,7 @@ def main():
         'text uid': df_split['text uid'].tolist(),
         'task': df_split['task'].tolist(),
         'dataset': df_split['dataset'].tolist(),
+        'subject': df_split['subject'].tolist(),
         'phase': df_split['phase'].tolist() if 'phase' in df_split.columns else [None] * len(df_split),
         'input text': df_split['input text'].tolist() if 'input text' in df_split.columns else [None] * len(df_split),
         'sentiment label': df_split['sentiment label'].tolist() if 'sentiment label' in df_split.columns else [None] * len(df_split),
