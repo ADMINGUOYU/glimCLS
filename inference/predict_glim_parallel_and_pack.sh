@@ -8,6 +8,13 @@
 # ============================================================
 USE_SINGLE_CHECKPOINT=true
 
+# ============================================================
+# DATASET SELECTION
+# Set USE_ZUCO1_ONLY=true to use only ZuCo1 dataset
+# and drop all ZuCo2 samples
+# ============================================================
+USE_ZUCO1_ONLY=false
+
 # Set paths to your checkpoints
 CKPT="./logs/...ckpt"
 SENTIMENT_CKPT="./logs/...ckpt"
@@ -33,6 +40,13 @@ DEVICE=0
 # Set split
 SPLIT="all" # run predict on all 'train', 'test' and 'val' splits
 
+# Build the zuco1 only flag
+ZUCO1_FLAG=""
+if [ "$USE_ZUCO1_ONLY" = true ]; then
+    ZUCO1_FLAG="--use_zuco1_only"
+    echo "Note: Using ZuCo1 dataset only (ZuCo2 samples will be dropped)"
+fi
+
 # Run prediction based on mode
 if [ "$USE_SINGLE_CHECKPOINT" = true ]; then
     echo "Running in SINGLE CHECKPOINT mode using CKPT for all tasks"
@@ -42,7 +56,8 @@ if [ "$USE_SINGLE_CHECKPOINT" = true ]; then
         --output_path "$OUTPUT_PATH" \
         --device "$DEVICE" \
         --batch_size "$BATCH_SIZE" \
-        --split "$SPLIT"
+        --split "$SPLIT" \
+        $ZUCO1_FLAG
 else
     echo "Running in MULTI-CHECKPOINT mode with separate checkpoints per task"
     python -m inference.predict_glim_parallel_and_pack \
@@ -54,5 +69,6 @@ else
         --output_path "$OUTPUT_PATH" \
         --device "$DEVICE" \
         --batch_size "$BATCH_SIZE" \
-        --split "$SPLIT"
+        --split "$SPLIT" \
+        $ZUCO1_FLAG
 fi

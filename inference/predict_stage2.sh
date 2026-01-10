@@ -75,13 +75,13 @@ CMD="python -m inference.predict_stage2 \
     --text_model \"$TEXT_MODEL\" \
     --freeze_strategy \"$FREEZE_STRATEGY\" \
     --lora_rank $LORA_RANK \
-    --sentiment_labels ${SENTIMENT_LABELS[@]} \
-    --topic_labels \"${TOPIC_LABELS[@]}\" \
     --max_length $MAX_LENGTH \
     --num_beams $NUM_BEAMS \
     --batch_size $BATCH_SIZE \
     --device \"$DEVICE\" \
     --split \"$SPLIT\""
+CMD+=(--sentiment_labels "${SENTIMENT_LABELS[@]}")
+CMD+=(--topic_labels "${TOPIC_LABELS[@]}")
 
 # Add sampling options if enabled
 if [ "$DO_SAMPLE" = true ]; then

@@ -109,6 +109,13 @@ def parse_args():
         help="Which data split to predict on (default: all)"
     )
     
+    # ZuCo1 only flag
+    parser.add_argument(
+        "--use_zuco1_only",
+        action="store_true",
+        help="If set, drop all ZuCo2 samples and use only ZuCo1 dataset"
+    )
+    
     args = parser.parse_args()
     
     # Validate arguments
@@ -120,6 +127,36 @@ def parse_args():
                         "--sentiment_checkpoint, --topic_checkpoint, --length_checkpoint, --surprisal_checkpoint")
     
     return args
+
+
+def filter_zuco1_only(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Filter the DataFrame to keep only ZuCo1 samples. 
+    
+    Args:
+        df: Input DataFrame with 'dataset' column
+        
+    Returns: 
+        Filtered DataFrame containing only ZuCo1 samples
+    """
+    if 'dataset' not in df.columns:
+        print("Warning: 'dataset' column not found in DataFrame. Cannot filter by dataset.")
+        return df
+    
+    original_len = len(df)
+    
+    # Filter to keep only ZuCo1 (case-insensitive matching)
+    df_filtered = df[df['dataset'].str.lower() == 'zuco1'].reset_index(drop=True)
+    
+    filtered_len = len(df_filtered)
+    dropped_len = original_len - filtered_len
+    
+    print(f"ZuCo1 filter applied:")
+    print(f"  - Original samples: {original_len}")
+    print(f"  - ZuCo1 samples: {filtered_len}")
+    print(f"  - ZuCo2 samples dropped: {dropped_len}")
+    
+    return df_filtered
 
 
 def load_model_from_checkpoint(checkpoint_path: str, device: torch.device) -> GLIM_PARALLEL:
@@ -254,7 +291,7 @@ def predict_with_model(
                 }
             elif task == 'surprisal':
                 preds = {
-                    'pred_value': outputs['surprisal_pred'.float()].cpu().numpy(),
+                    'pred_value': outputs['surprisal_pred'].float().cpu().numpy(),
                 }
             
             # Add text_uid for merging
@@ -315,8 +352,8 @@ def predict_all_tasks_with_single_model(
                 'sentiment_pred_prob': outputs['sentiment_prob'].float().cpu().numpy(),
                 # Topic predictions
                 'topic_pred_idx': outputs['topic_pred'].float().cpu().numpy(),
-                'topic_pred_label':  outputs['topic_label'],
-                'topic_pred_prob':  outputs['topic_prob'].float().cpu().numpy(),
+                'topic_pred_label': outputs['topic_label'],
+                'topic_pred_prob': outputs['topic_prob'].float().cpu().numpy(),
                 # Length predictions
                 'length_pred_value': outputs['length_pred'].float().cpu().numpy(),
                 # Surprisal predictions
@@ -469,12 +506,22 @@ def main():
             ("surprisal", args.surprisal_checkpoint),
         ]:
             if not os.path.exists(path):
-                raise FileNotFoundError(f"{name} checkpoint not found:  {path}")
+                raise FileNotFoundError(f"{name} checkpoint not found: {path}")
     
     # Load data
-    print(f"Loading data from:  {args.data_path}")
+    print(f"Loading data from: {args.data_path}")
     df = pd.read_pickle(args.data_path)
     print(f"Total samples: {len(df)}")
+    
+    # Apply ZuCo1 filter if specified
+    if args.use_zuco1_only:
+        print(f"\n{'='*60}")
+        print("FILTERING: ZuCo1 ONLY MODE")
+        print(f"{'='*60}")
+        df = filter_zuco1_only(df)
+        
+        if len(df) == 0:
+            raise ValueError("No samples remaining after ZuCo1 filter. Check your data.")
     
     # Create dataloader
     dataloader, df_split = create_prediction_dataloader(df, args.split, args.batch_size)
@@ -529,7 +576,7 @@ def main():
         torch.cuda.empty_cache()
         
     else:
-        # Multi-checkpoint mode:  load and predict with each checkpoint
+        # Multi-checkpoint mode: load and predict with each checkpoint
         checkpoint_tasks = [
             ('sentiment', args.sentiment_checkpoint),
             ('topic', args.topic_checkpoint),
@@ -579,7 +626,7 @@ def main():
     print(f"\n{'='*60}")
     print(f"Saving predictions to: {args.output_path}")
     results.to_pickle(args.output_path)
-    print(f"Saved with columns: {results.columns}")
+    print(f"Saved with columns: {results.columns.tolist()}")
     print(f"Preview results.iloc[0]:\n{results.iloc[0]}")
 
     # Save predicted text at stage 1 to csv [DEBUG]
@@ -607,6 +654,13 @@ def main():
     print(f"{'='*60}")
     print(f"Total predictions: {len(results)}")
     
+    # Print dataset distribution
+    if 'dataset' in results.columns:
+        dataset_counts = results['dataset'].value_counts()
+        print(f"\nDataset distribution:")
+        for dataset, count in dataset_counts.items():
+            print(f"  - {dataset}: {count}")
+    
     # Sentiment accuracy (if ground truth available)
     if 'sentiment label' in results.columns and results['sentiment label'].notna().any():
         correct = (results['sentiment label'] == results['pred_sentiment_label']).sum()
@@ -623,7 +677,7 @@ def main():
     if 'length' in results.columns and results['length'].notna().any():
         valid_mask = results['length'].notna()
         mae = np.abs(results.loc[valid_mask, 'length'].values - results.loc[valid_mask, 'pred_length'].values).mean()
-        print(f"Length MAE:  {mae:.4f}")
+        print(f"Length MAE: {mae:.4f}")
     
     # Surprisal MAE (if ground truth available)
     if 'surprisal' in results.columns and results['surprisal'].notna().any():

@@ -23,6 +23,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from model.stage2_model import Stage2ReconstructionModel
 from data.stage2_dataset import Stage2ReconstructionDataset
 
+# Import torchmetrics for evaluation (following GLIM approach)
+from torchmetrics.functional.text import bleu_score, rouge_score, word_error_rate
+from torchmetrics.functional.classification import multiclass_accuracy
+
 
 def parse_args():
     """Parse command line arguments."""
@@ -277,12 +281,83 @@ def create_dataloader(
 def collate_fn(batch: List[Dict]) -> Dict:
     """Collate function for Stage 2 dataset."""
     return {
-        "label_task1": torch.stack([item["label_task1"] for item in batch]),
-        "label_task2": torch.stack([item["label_task2"] for item in batch]),
+        'label_task1': torch.tensor([item['label_task1'] for item in batch], dtype=torch.long),
+        'label_task2': torch.tensor([item['label_task2'] for item in batch], dtype=torch.long),
         "ei": torch.stack([item["ei"] for item in batch]),
         "Zi": torch.stack([item["Zi"] for item in batch]),
         "target_text": [item["target_text"] for item in batch],
     }
+
+
+def encode_text_to_embedding(
+    model: Stage2ReconstructionModel,
+    texts: List[str],
+    device: str,
+    max_length: int = 96
+) -> torch.Tensor:
+    """
+    Encode text strings into embedding vectors using the T5 encoder.
+    
+    Following GLIM's approach:  encode text -> get hidden states -> pool to vector
+    Reference: https://github.com/justin-xzliu/GLIM/blob/main/model/glim.py
+    
+    Args:
+        model: Stage2ReconstructionModel with T5 encoder
+        texts: List of text strings to encode
+        device: Device to use
+        max_length: Maximum sequence length for tokenization
+        
+    Returns: 
+        Text embedding vectors (batch_size, embed_dim)
+    """
+    # Tokenize texts
+    encoding = model.tokenizer(
+        texts,
+        max_length=max_length,
+        padding='max_length',
+        truncation=True,
+        return_tensors='pt'
+    ).to(device)
+    
+    input_ids = encoding.input_ids
+    attention_mask = encoding.attention_mask
+    
+    # Get the base model (handle LoRA wrapper if present)
+    # Check freeze_strategy to determine model structure
+    if model.freeze_strategy == "lora":
+        # LoRA wrapped model: model.model is PeftModel
+        # Access:  PeftModel -> base_model -> model (T5ForConditionalGeneration)
+        base_model = model.model.base_model.model
+    else:
+        # No LoRA:  model.model is T5ForConditionalGeneration directly
+        base_model = model.model
+
+    # Get encoder
+    encoder = base_model.get_encoder()
+    
+    # Encode text to hidden states
+    with torch.no_grad():
+        outputs = encoder(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            return_dict=True
+        )
+    
+    hidden_states = outputs.last_hidden_state  # (batch, seq_len, hidden_dim)
+    
+    # Pool hidden states to get embedding vector
+    # Following GLIM: use attention-weighted mean pooling
+    # Expand attention mask to match hidden state dimensions
+    mask_expanded = attention_mask.unsqueeze(-1).expand(hidden_states.size()).float()
+    
+    # Sum hidden states weighted by attention mask
+    sum_embeddings = torch.sum(hidden_states * mask_expanded, dim=1)
+    
+    # Normalize by the number of non-padded tokens
+    sum_mask = mask_expanded.sum(dim=1).clamp(min=1e-9)
+    text_embeddings = sum_embeddings / sum_mask  # (batch, hidden_dim)
+    
+    return text_embeddings
 
 
 def generate_predictions(
@@ -297,9 +372,9 @@ def generate_predictions(
     top_p: float = 1.0,
     verbose: bool = False,
     num_samples_to_print: int = 5
-) -> List[Dict]:
+) -> Tuple[List[Dict], torch.Tensor, torch.Tensor, torch.Tensor]:
     """
-    Generate text predictions using the model.
+    Generate text predictions using the model and collect embeddings.
     
     Args:
         model: Trained Stage 2 model
@@ -314,10 +389,17 @@ def generate_predictions(
         verbose: Print sample predictions
         num_samples_to_print: Number of samples to print
         
-    Returns:
-        List of prediction dictionaries
+    Returns: 
+        Tuple of: 
+            - List of prediction dictionaries
+            - EEG embeddings tensor (n, embed_dim)
+            - Generated text embeddings tensor (n, embed_dim)
+            - Target text embeddings tensor (n, embed_dim)
     """
     all_predictions = []
+    all_eeg_embeddings = []
+    all_gen_text_embeddings = []
+    all_target_text_embeddings = []
     samples_printed = 0
     
     with torch.no_grad():
@@ -328,6 +410,9 @@ def generate_predictions(
             ei = batch["ei"].to(device)
             Zi = batch["Zi"].to(device)
             target_texts = batch["target_text"]
+            
+            # Collect EEG embeddings (ei is the global EEG embedding vector)
+            all_eeg_embeddings.append(ei.cpu())
             
             # Generate predictions
             predictions = generate_with_options(
@@ -343,6 +428,14 @@ def generate_predictions(
                 top_k=top_k,
                 top_p=top_p
             )
+            
+            # Encode generated texts to embeddings
+            gen_text_emb = encode_text_to_embedding(model, predictions, device)
+            all_gen_text_embeddings.append(gen_text_emb.cpu())
+            
+            # Encode target texts to embeddings
+            target_text_emb = encode_text_to_embedding(model, target_texts, device)
+            all_target_text_embeddings.append(target_text_emb.cpu())
             
             # Store predictions
             for i, (pred, target) in enumerate(zip(predictions, target_texts)):
@@ -361,7 +454,12 @@ def generate_predictions(
                     print(f"Prediction: {pred}")
                     samples_printed += 1
     
-    return all_predictions
+    # Concatenate all embeddings
+    eeg_embeddings = torch.cat(all_eeg_embeddings, dim=0)
+    gen_text_embeddings = torch.cat(all_gen_text_embeddings, dim=0)
+    target_text_embeddings = torch.cat(all_target_text_embeddings, dim=0)
+    
+    return all_predictions, eeg_embeddings, gen_text_embeddings, target_text_embeddings
 
 
 def generate_with_options(
@@ -450,8 +548,9 @@ def generate_with_options(
 def compute_metrics(predictions: List[Dict]) -> Dict:
     """
     Compute evaluation metrics for the predictions.
-
-    **TODO**
+    
+    Following the GLIM approach for computing BLEU, ROUGE, and WER metrics.
+    Reference: https://github.com/justin-xzliu/GLIM/blob/main/model/glim.py
     
     Args:
         predictions: List of prediction dictionaries
@@ -460,12 +559,175 @@ def compute_metrics(predictions: List[Dict]) -> Dict:
             | -> "sentiment_label_idx"
             | -> "topic_label_idx"
     Returns:
-        Dictionary of metrics
+        Dictionary of metrics including:
+            - BLEU-1, BLEU-2, BLEU-3, BLEU-4
+            - ROUGE-1 (fmeasure, precision, recall)
+            - Word Error Rate (WER)
+            - Per-sample metrics list
     """
+    # Initialize lists for collecting metrics (following GLIM's cal_gen_metrics)
+    bleu1_scores = []
+    bleu2_scores = []
+    bleu3_scores = []
+    bleu4_scores = []
+    rouge1_fmeasure = []
+    rouge1_precision = []
+    rouge1_recall = []
+    wer_scores = []
     
-    # TODO
+    # Per-sample metrics for detailed analysis
+    per_sample_metrics = []
     
-    return { }
+    print("\nComputing metrics...")
+    for pred_dict in tqdm(predictions, desc="Computing metrics"):
+        pred_text = pred_dict["prediction"]
+        target_text = pred_dict["target"]
+        
+        # Handle empty predictions or targets
+        if not pred_text or not pred_text.strip():
+            pred_text = " "  # Use space to avoid empty string issues
+        if not target_text or not target_text.strip():
+            target_text = " "
+        
+        # Compute BLEU scores (n-gram 1-4)
+        # Following GLIM:  bleu_score([pred], [targets], n_gram=n)
+        # Note: targets can be a tuple/list for multiple references, here we use single reference
+        try:
+            b1 = bleu_score([pred_text], [[target_text]], n_gram=1)
+            b2 = bleu_score([pred_text], [[target_text]], n_gram=2)
+            b3 = bleu_score([pred_text], [[target_text]], n_gram=3)
+            b4 = bleu_score([pred_text], [[target_text]], n_gram=4)
+        except Exception as e:
+            # Fallback for edge cases (very short texts, etc.)
+            b1 = b2 = b3 = b4 = torch.tensor(0.0)
+        
+        bleu1_scores.append(b1)
+        bleu2_scores.append(b2)
+        bleu3_scores.append(b3)
+        bleu4_scores.append(b4)
+        
+        # Compute ROUGE-1 scores
+        # Following GLIM: rouge_score([pred], [targets], rouge_keys='rouge1')
+        try:
+            rouge1_dict = rouge_score([pred_text], [[target_text]], rouge_keys='rouge1')
+            r1_fmeasure = rouge1_dict['rouge1_fmeasure']
+            r1_precision = rouge1_dict['rouge1_precision']
+            r1_recall = rouge1_dict['rouge1_recall']
+        except Exception as e:
+            r1_fmeasure = r1_precision = r1_recall = torch.tensor(0.0)
+        
+        rouge1_fmeasure.append(r1_fmeasure)
+        rouge1_precision.append(r1_precision)
+        rouge1_recall.append(r1_recall)
+        
+        # Compute Word Error Rate
+        # Following GLIM: word_error_rate([pred], [target])
+        try:
+            wer = word_error_rate([pred_text], [target_text])
+        except Exception as e:
+            wer = torch.tensor(1.0)  # Maximum error for edge cases
+        
+        wer_scores.append(wer)
+        
+        # Store per-sample metrics
+        per_sample_metrics.append({
+            "prediction": pred_text,
+            "target": target_text,
+            "bleu1": b1.item() if torch.is_tensor(b1) else b1,
+            "bleu2": b2.item() if torch.is_tensor(b2) else b2,
+            "bleu3": b3.item() if torch.is_tensor(b3) else b3,
+            "bleu4": b4.item() if torch.is_tensor(b4) else b4,
+            "rouge1_fmeasure": r1_fmeasure.item() if torch.is_tensor(r1_fmeasure) else r1_fmeasure,
+            "rouge1_precision": r1_precision.item() if torch.is_tensor(r1_precision) else r1_precision,
+            "rouge1_recall": r1_recall.item() if torch.is_tensor(r1_recall) else r1_recall,
+            "wer": wer.item() if torch.is_tensor(wer) else wer,
+            "sentiment_label_idx": pred_dict["sentiment_label_idx"],
+            "topic_label_idx":  pred_dict["topic_label_idx"],
+        })
+    
+    # Compute mean metrics (following GLIM's approach of stacking and averaging)
+    metrics_mean = {
+        "bleu1": torch.stack(bleu1_scores).mean().item(),
+        "bleu2": torch.stack(bleu2_scores).mean().item(),
+        "bleu3": torch.stack(bleu3_scores).mean().item(),
+        "bleu4": torch.stack(bleu4_scores).mean().item(),
+        "rouge1_fmeasure": torch.stack(rouge1_fmeasure).mean().item(),
+        "rouge1_precision": torch.stack(rouge1_precision).mean().item(),
+        "rouge1_recall": torch.stack(rouge1_recall).mean().item(),
+        "wer": torch.stack(wer_scores).mean().item(),
+    }
+    
+    # Print summary metrics
+    print("\n" + "=" * 60)
+    print("Text Generation Metrics Summary")
+    print("=" * 60)
+    print(f"BLEU-1:            {metrics_mean['bleu1']:.4f}")
+    print(f"BLEU-2:            {metrics_mean['bleu2']:.4f}")
+    print(f"BLEU-3:            {metrics_mean['bleu3']:.4f}")
+    print(f"BLEU-4:            {metrics_mean['bleu4']:.4f}")
+    print("-" * 60)
+    print(f"ROUGE-1 F-measure:  {metrics_mean['rouge1_fmeasure']:.4f}")
+    print(f"ROUGE-1 Precision: {metrics_mean['rouge1_precision']:.4f}")
+    print(f"ROUGE-1 Recall:    {metrics_mean['rouge1_recall']:.4f}")
+    print("-" * 60)
+    print(f"Word Error Rate:   {metrics_mean['wer']:.4f}")
+    print("=" * 60)
+    
+    return {
+        "mean":  metrics_mean,
+        "per_sample":  per_sample_metrics,
+    }
+
+
+def compute_retrieval_metrics(
+    eeg_embeddings: torch.Tensor,
+    text_embeddings: torch.Tensor,
+    device: str = "cpu"
+) -> Dict:
+    """
+    Compute retrieval metrics using cosine similarity between EEG and text embeddings. 
+    
+    Following the GLIM approach for computing retrieval accuracy.
+    Reference: https://github.com/justin-xzliu/GLIM/blob/main/model/glim.py
+    
+    Args:
+        eeg_embeddings: EEG embedding vectors (n, embed_dim)
+        text_embeddings: Text embedding vectors (n, embed_dim)
+        device: Device to compute on
+        
+    Returns:
+        Dictionary of retrieval metrics (top-1, top-5, top-10 accuracy)
+    """
+    eeg_embeddings = eeg_embeddings.to(device)
+    text_embeddings = text_embeddings.to(device)
+    
+    bsz = eeg_embeddings.shape[0]
+    
+    # Normalize embeddings (following GLIM's align_emb_vector)
+    eeg_norm = eeg_embeddings / eeg_embeddings.norm(dim=1, keepdim=True)
+    text_norm = text_embeddings / text_embeddings.norm(dim=1, keepdim=True)
+    
+    # Compute cosine similarity logits
+    logits = eeg_norm @ text_norm.T  # (n, n)
+    
+    # Targets are identity (each EEG should match its corresponding text)
+    targets = torch.arange(bsz, dtype=torch.int, device=device)
+    
+    # Compute softmax probabilities
+    probs = torch.softmax(logits, dim=-1)
+    
+    # Compute top-k accuracy (following GLIM's cal_retrieval_metrics)
+    acc_top1 = multiclass_accuracy(probs, targets, average='micro', num_classes=bsz, top_k=1)
+    acc_top5 = multiclass_accuracy(probs, targets, average='micro', num_classes=bsz, top_k=min(5, bsz))
+    acc_top10 = multiclass_accuracy(probs, targets, average='micro', num_classes=bsz, top_k=min(10, bsz))
+    
+    retrieval_metrics = {
+        "retrieval_acc_top01": acc_top1.item(),
+        "retrieval_acc_top05": acc_top5.item(),
+        "retrieval_acc_top10": acc_top10.item(),
+    }
+    
+    return retrieval_metrics
 
 
 def save_predictions(
@@ -481,10 +743,13 @@ def save_predictions(
         predictions: List of prediction dictionaries
         df_split: Original DataFrame for additional columns
         output_path: Path to save the CSV
-        metrics: Computed metrics **TODO
+        metrics: Computed metrics
     """
-    # Create output DataFrame
-    pred_df = pd.DataFrame(predictions)
+    # Create output DataFrame from per-sample metrics if available
+    if metrics is not None and "per_sample" in metrics: 
+        pred_df = pd.DataFrame(metrics["per_sample"])
+    else:
+        pred_df = pd.DataFrame(predictions)
     
     # Add additional columns from original DataFrame if available
     # Provides extensibility
@@ -497,8 +762,13 @@ def save_predictions(
     pred_df.to_csv(output_path, index=False)
     print(f"\nPredictions saved to: {output_path}")
     
-    # Save metrics
-    # TODO
+    # Save metrics summary to a separate JSON file
+    if metrics is not None and "mean" in metrics:
+        import json
+        metrics_path = output_path.replace(".csv", "_metrics.json")
+        with open(metrics_path, "w") as f:
+            json.dump(metrics["mean"], f, indent=2)
+        print(f"Metrics summary saved to: {metrics_path}")
 
 
 def main():
@@ -548,9 +818,9 @@ def main():
         device=device
     )
     
-    # Generate predictions
-    print("\nGenerating predictions...")
-    predictions = generate_predictions(
+    # Generate predictions and collect embeddings
+    print("\nGenerating predictions and collecting embeddings...")
+    predictions, eeg_embeddings, gen_text_embeddings, target_text_embeddings = generate_predictions(
         model=model,
         dataloader=dataloader,
         device=device,
@@ -565,10 +835,47 @@ def main():
     )
     
     print(f"\nGenerated {len(predictions)} predictions")
+    print(f"EEG embeddings shape: {eeg_embeddings.shape}")
+    print(f"Generated text embeddings shape: {gen_text_embeddings.shape}")
+    print(f"Target text embeddings shape: {target_text_embeddings.shape}")
     
-    # Compute metrics
-    # TODO
-    metrics = None
+    # Compute text generation metrics (BLEU, ROUGE, WER)
+    metrics = compute_metrics(predictions)
+    
+    # Compute retrieval metrics
+    # EEG -> Generated Text retrieval
+    print("\n" + "=" * 60)
+    print("Retrieval Metrics:  EEG -> Generated Text")
+    print("=" * 60)
+    retrieval_metrics_gen = compute_retrieval_metrics(
+        eeg_embeddings=eeg_embeddings,
+        text_embeddings=gen_text_embeddings,
+        device=device
+    )
+    print(f"Top-1 Accuracy:   {retrieval_metrics_gen['retrieval_acc_top01']:.4f}")
+    print(f"Top-5 Accuracy:   {retrieval_metrics_gen['retrieval_acc_top05']:.4f}")
+    print(f"Top-10 Accuracy:  {retrieval_metrics_gen['retrieval_acc_top10']:.4f}")
+    
+    # EEG -> Target Text retrieval
+    print("\n" + "=" * 60)
+    print("Retrieval Metrics: EEG -> Target Text")
+    print("=" * 60)
+    retrieval_metrics_target = compute_retrieval_metrics(
+        eeg_embeddings=eeg_embeddings,
+        text_embeddings=target_text_embeddings,
+        device=device
+    )
+    print(f"Top-1 Accuracy:   {retrieval_metrics_target['retrieval_acc_top01']:.4f}")
+    print(f"Top-5 Accuracy:   {retrieval_metrics_target['retrieval_acc_top05']:.4f}")
+    print(f"Top-10 Accuracy:  {retrieval_metrics_target['retrieval_acc_top10']:.4f}")
+    
+    # Add retrieval metrics to the metrics dictionary
+    metrics["mean"]["retrieval_eeg_gen_top01"] = retrieval_metrics_gen["retrieval_acc_top01"]
+    metrics["mean"]["retrieval_eeg_gen_top05"] = retrieval_metrics_gen["retrieval_acc_top05"]
+    metrics["mean"]["retrieval_eeg_gen_top10"] = retrieval_metrics_gen["retrieval_acc_top10"]
+    metrics["mean"]["retrieval_eeg_target_top01"] = retrieval_metrics_target["retrieval_acc_top01"]
+    metrics["mean"]["retrieval_eeg_target_top05"] = retrieval_metrics_target["retrieval_acc_top05"]
+    metrics["mean"]["retrieval_eeg_target_top10"] = retrieval_metrics_target["retrieval_acc_top10"]
     
     # Save predictions
     if args.output_path is None:
