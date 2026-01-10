@@ -181,7 +181,18 @@ def load_model_from_checkpoint(checkpoint_path: str, device: torch.device) -> GL
     
     # Create model with saved hyperparameters
     model = GLIM_PARALLEL(**hparams)
-    
+
+    # Extract and set regression statistics before loading state dict
+    # (buffers need to be registered before load_state_dict can load them)
+    state_dict = checkpoint['state_dict']
+    if 'length_mean' in state_dict:
+        length_mean = state_dict['length_mean'].item()
+        length_std = state_dict['length_std'].item()
+        surprisal_mean = state_dict['surprisal_mean'].item()
+        surprisal_std = state_dict['surprisal_std'].item()
+        model.set_regression_stats(length_mean, length_std, surprisal_mean, surprisal_std)
+        print(f"  Loaded regression stats: length({length_mean:.2f}±{length_std:.2f}), surprisal({surprisal_mean:.4f}±{surprisal_std:.4f})")
+
     # Load state dict (strict=False -> we don't have text_model weights -> let's play safe)
     model.load_state_dict(checkpoint['state_dict'], strict=False)
 

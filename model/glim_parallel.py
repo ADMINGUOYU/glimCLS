@@ -705,9 +705,13 @@ class GLIM_PARALLEL(L.LightningModule):
             
             # Length regression
             length_pred = self.length_regressor(eeg_emb).squeeze(-1)
-            
+            # Denormalize to original scale
+            length_pred = self.denormalize_predictions(length_pred, 'length')
+
             # Surprisal regression
             surprisal_pred = self.surprisal_regressor(eeg_emb).squeeze(-1)
+            # Denormalize to original scale
+            surprisal_pred = self.denormalize_predictions(surprisal_pred, 'surprisal')
 
             # Text generation using Zi and text_model
             encoder_outputs = BaseModelOutput(Zi)

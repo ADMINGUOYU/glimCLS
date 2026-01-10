@@ -13,10 +13,10 @@ USE_SINGLE_CHECKPOINT=true
 # Set USE_ZUCO1_ONLY=true to use only ZuCo1 dataset
 # and drop all ZuCo2 samples
 # ============================================================
-USE_ZUCO1_ONLY=false
+USE_ZUCO1_ONLY=true
 
 # Set paths to your checkpoints
-CKPT="./logs/...ckpt"
+CKPT="/mnt/afs/250010218/glimCLS/logs/glim_parallel_20260109_071609/checkpoints/model-epoch45-acc_sentiment0.8209.ckpt"
 SENTIMENT_CKPT="./logs/...ckpt"
 TOPIC_CKPT="./logs/...ckpt"
 LENGTH_CKPT="./logs/...ckpt"
@@ -26,7 +26,7 @@ SURPRISAL_CKPT="./logs/...ckpt"
 DATA_PATH="./data/zuco_preprocessed_dataframe/zuco_merged_with_variants.df"
 
 # Set output path
-OUTPUT_PATH="./data/zuco_preprocessed_dataframe/stage2.df"
+OUTPUT_PATH="./data/zuco_preprocessed_dataframe/222.df"
 
 # Create output directory if it doesn't exist
 mkdir -p $(dirname $OUTPUT_PATH)
@@ -38,7 +38,7 @@ BATCH_SIZE=72
 DEVICE=0
 
 # Set split
-SPLIT="all" # run predict on all 'train', 'test' and 'val' splits
+SPLIT="val" # run predict on all 'train', 'test' and 'val' splits
 
 # Build the zuco1 only flag
 ZUCO1_FLAG=""

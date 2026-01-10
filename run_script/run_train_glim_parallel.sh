@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# single GPU
+# Zuco12 single gpu with loss scaling +channel weight
 
 
 # Training script for GLIM_PARALLEL model
@@ -16,6 +16,14 @@
 # ============================================================================
 # CONFIGURATION PARAMETERS
 # ============================================================================
+#some important changes made here
+USE_ZUCO1_ONLY=false
+USE_CHANNEL_WEIGHTS=true
+
+USE_SCALED_LR=true          # Scale LR by number of GPUs in multi-GPU training
+USE_PER_GPU_BATCH_SIZE=true # Treat BATCH_SIZE as per-GPU (global = BATCH_SIZE × num_gpus)
+USE_CLASS_WEIGHTS=true     # Enable per-class loss weighting based on inverse frequency
+
 
 # Data
 DATA_PATH="data/ZUCO1-2_FOR_GLIMCLS/zuco_merged_with_variants.df"
@@ -45,7 +53,8 @@ MLP_DROPOUT=0.3
 # Loss Weights (6 total)
 CLIP_LOSS_WEIGHT=0.5
 LM_LOSS_WEIGHT=0.5
-COMMITMENT_LOSS_WEIGHT=1500
+COMMITMENT_LOSS_WEIGHT=0.7
+# COMMITMENT_LOSS_WEIGHT=1000
 SENTIMENT_LOSS_WEIGHT=0.3
 TOPIC_LOSS_WEIGHT=0.3
 LENGTH_LOSS_WEIGHT=0.3
@@ -67,13 +76,7 @@ LR=2e-4
 MIN_LR=1e-5
 WARMUP_EPOCHS=15
 SEED=42
-USE_ZUCO1_ONLY=true
-USE_CHANNEL_WEIGHTS=false
 
-USE_SCALED_LR=false          # Scale LR by number of GPUs in multi-GPU training
-USE_PER_GPU_BATCH_SIZE=false # Treat BATCH_SIZE as per-GPU (global = BATCH_SIZE × num_gpus)
-
-USE_CLASS_WEIGHTS=true     # Enable per-class loss weighting based on inverse frequency
 
 # Hardware multi-GPU settings
 # ACCELERATOR="gpu"
@@ -139,10 +142,11 @@ python -m train.train_glim_parallel \
     --precision "$PRECISION" \
     --seed $SEED \
     --num_workers $NUM_WORKERS \
-    ${USE_ZUCO1_ONLY:+--use_zuco1_only} \
-    ${USE_CHANNEL_WEIGHTS:+--use_channel_weights} \
-    ${USE_SCALED_LR:+--use_scaled_lr} \
-    ${USE_PER_GPU_BATCH_SIZE:+--use_per_gpu_batch_size} \
+    $([ "$USE_ZUCO1_ONLY" = true ] && echo "--use_zuco1_only") \
+    $([ "$USE_CHANNEL_WEIGHTS" = true ] && echo "--use_channel_weights") \
+    $([ "$USE_SCALED_LR" = true ] && echo "--use_scaled_lr") \
+    $([ "$USE_PER_GPU_BATCH_SIZE" = true ] && echo "--use_per_gpu_batch_size") \
+    $([ "$USE_CLASS_WEIGHTS" = true ] && echo "--use_class_weights") \
     ${MODEL_CACHE_DIR:+--model_cache_dir "$MODEL_CACHE_DIR"}
 
 # Optional flags (uncomment as needed):
