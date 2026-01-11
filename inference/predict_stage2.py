@@ -711,54 +711,99 @@ def compute_metrics(predictions: List[Dict]) -> Dict:
 
 
 def compute_retrieval_metrics(
-    eeg_embeddings: torch.Tensor,
-    text_embeddings: torch.Tensor,
+    predictions: List[Dict],
+    top_k: List[int] = [1, 5, 10],
     device: str = "cpu"
 ) -> Dict:
     """
-    Compute retrieval metrics using cosine similarity between EEG and text embeddings. 
-    
-    Following the GLIM approach for computing retrieval accuracy.
-    Reference: https://github.com/justin-xzliu/GLIM/blob/main/model/glim.py
+    Compute retrieval metrics using cosine similarity between generated text's embeddings
+    and target text embeddings (use raw text here). 
     
     Args:
-        eeg_embeddings: EEG embedding vectors (n, embed_dim)
-        text_embeddings: Text embedding vectors (n, embed_dim)
+        predictions: List of prediction dictionaries
+            | -> "prediction"
+            | -> "target"
+            | -> "sentiment_label_idx"
+            | -> "topic_label_idx"
+        top_k: Top K retrieval to calculate
         device: Device to compute on
         
     Returns:
         Dictionary of retrieval metrics (top-1, top-5, top-10 accuracy)
     """
-    eeg_embeddings = eeg_embeddings.to(device)
-    text_embeddings = text_embeddings.to(device)
+
+    # Initialize embedding generating models
+    from . import generate_embedding
+    generate_embedding.setup(device)
+
+    # Load variants table
+    var_df : pd.DataFrame = pd.read_pickle(PATH_TO_VARIANTS)
+    print(f"Received variants dataframe columns: {var_df.columns.to_list()}")
+
+    # Initialize lists pred_text and target_text
+    pred_text = []
+    target_text = []
+
+    # Gathering sentences
+    print("\nGathering sentences...")
+    for pred_dict in tqdm(predictions, desc="Gathering sentences"):
+        # Get text
+        pred : str = pred_dict["prediction"]
+        target : str = pred_dict["target"]
+
+        # Handle empty predictions or targets
+        if not pred or not pred.strip():
+            pred = " "  # Use space to avoid empty string issues
+        if not target or not target.strip():
+            target = " "
+
+        # Look up for raw and variants
+        index = var_df.index[var_df['input text'] == target].to_list()
+        assert len(index) > 0, f"[ERROR] Input text {target} not found"
+        index = index[0]
+        raw_text = var_df.loc[index, 'raw text']
     
-    bsz = eeg_embeddings.shape[0]
+        # Append
+        pred_text.append(pred)
+        target_text.append(raw_text)
+        
+    # Calculate embeddings
+    print("\nCalculate embeddings...")
+    pred_emb = generate_embedding.generate_embedding(pred_text)
+    target_emb = generate_embedding.generate_embedding(target_text)
+    assert pred_emb.shape == target_emb.shape, "[ERROR] Predicted text embeddings' shape should match Target text embeddings' shape"
+
+    # Send them to device
+    pred_emb = torch.tensor(pred_emb, device = device)
+    target_emb = torch.tensor(target_emb, device = device)
+
+    # 1. Normalize for cosine similarity
+    pred_emb = torch.nn.functional.normalize(pred_emb, p=2, dim=1)
+    target_emb = torch.nn.functional.normalize(target_emb, p=2, dim=1)
+
+    # 2. Calculate Similarity Matrix (N x M)
+    scores = torch.mm(pred_emb, target_emb.transpose(0, 1))
+
+    # 3. Get Top-K indices for the largest K in the list
+    ks = top_k
+    max_k = max(ks)
+    _, topk_indices = scores.topk(max_k, dim=1)  # (N, max_k)
+
+    # 4. Check if ground_truth index is in the top-k retrieved indices
+    # We expand ground_truth to (N, max_k) to compare directly
+    # - Ground Truth: Index i in queries should match index i in gallery
+    # (Assuming queries[i] matches gallery[i])
+    ground_truth = torch.arange(pred_emb.size(0), device = pred_emb.device).view(-1, 1)
+    correct = topk_indices.eq(ground_truth.view(-1, 1).expand_as(topk_indices))
+
+    results = {}
+    for k in ks:
+        # Sum correct matches within the first k columns
+        correct_k = correct[:, :k].reshape(-1).float().sum(0)
+        acc = float(correct_k / pred_emb.size(0))
+        results[f"retrieval_acc_top{k:02d}"] = acc
     
-    # Normalize embeddings (following GLIM's align_emb_vector)
-    eeg_norm = eeg_embeddings / eeg_embeddings.norm(dim=1, keepdim=True)
-    text_norm = text_embeddings / text_embeddings.norm(dim=1, keepdim=True)
-    
-    # Compute cosine similarity logits
-    logits = eeg_norm @ text_norm.T  # (n, n)
-    
-    # Targets are identity (each EEG should match its corresponding text)
-    targets = torch.arange(bsz, dtype=torch.int, device=device)
-    
-    # Compute softmax probabilities
-    probs = torch.softmax(logits, dim=-1)
-    
-    # Compute top-k accuracy (following GLIM's cal_retrieval_metrics)
-    acc_top1 = multiclass_accuracy(probs, targets, average='micro', num_classes=bsz, top_k=1)
-    acc_top5 = multiclass_accuracy(probs, targets, average='micro', num_classes=bsz, top_k=min(5, bsz))
-    acc_top10 = multiclass_accuracy(probs, targets, average='micro', num_classes=bsz, top_k=min(10, bsz))
-    
-    retrieval_metrics = {
-        "retrieval_acc_top01": acc_top1.item(),
-        "retrieval_acc_top05": acc_top5.item(),
-        "retrieval_acc_top10": acc_top10.item(),
-    }
-    
-    return retrieval_metrics
+    return results
 
 
 def save_predictions(
@@ -874,39 +919,19 @@ def main():
     metrics = compute_metrics(predictions)
     
     # Compute retrieval metrics
-    # EEG -> Generated Text retrieval
     print("\n" + "=" * 60)
-    print("Retrieval Metrics:  EEG -> Generated Text")
+    print("Retrieval Metrics: Generated Text(emb) <-> Target Text(emb)")
     print("=" * 60)
-    retrieval_metrics_gen = compute_retrieval_metrics(
-        eeg_embeddings=eeg_embeddings,
-        text_embeddings=gen_text_embeddings,
-        device=device
-    )
+    retrieval_metrics_gen = compute_retrieval_metrics(predictions, top_k = [1, 5, 10], device = device)
+
     print(f"Top-1 Accuracy:   {retrieval_metrics_gen['retrieval_acc_top01']:.4f}")
     print(f"Top-5 Accuracy:   {retrieval_metrics_gen['retrieval_acc_top05']:.4f}")
     print(f"Top-10 Accuracy:  {retrieval_metrics_gen['retrieval_acc_top10']:.4f}")
-    
-    # EEG -> Target Text retrieval
-    print("\n" + "=" * 60)
-    print("Retrieval Metrics: EEG -> Target Text")
-    print("=" * 60)
-    retrieval_metrics_target = compute_retrieval_metrics(
-        eeg_embeddings=eeg_embeddings,
-        text_embeddings=target_text_embeddings,
-        device=device
-    )
-    print(f"Top-1 Accuracy:   {retrieval_metrics_target['retrieval_acc_top01']:.4f}")
-    print(f"Top-5 Accuracy:   {retrieval_metrics_target['retrieval_acc_top05']:.4f}")
-    print(f"Top-10 Accuracy:  {retrieval_metrics_target['retrieval_acc_top10']:.4f}")
     
     # Add retrieval metrics to the metrics dictionary
     metrics["mean"]["retrieval_eeg_gen_top01"] = retrieval_metrics_gen["retrieval_acc_top01"]
     metrics["mean"]["retrieval_eeg_gen_top05"] = retrieval_metrics_gen["retrieval_acc_top05"]
     metrics["mean"]["retrieval_eeg_gen_top10"] = retrieval_metrics_gen["retrieval_acc_top10"]
-    metrics["mean"]["retrieval_eeg_target_top01"] = retrieval_metrics_target["retrieval_acc_top01"]
-    metrics["mean"]["retrieval_eeg_target_top05"] = retrieval_metrics_target["retrieval_acc_top05"]
-    metrics["mean"]["retrieval_eeg_target_top10"] = retrieval_metrics_target["retrieval_acc_top10"]
     
     # Save predictions
     if args.output_path is None:
