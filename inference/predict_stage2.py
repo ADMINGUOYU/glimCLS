@@ -503,8 +503,11 @@ def generate_with_options(
     device = label_task1.device
     
     # Build prompt
-    prompt = model.build_prompt()
-    prompts = [prompt] * batch_size
+    # Build prompts with length and surprisal values
+    prompts = [
+        model.build_prompt(length[i].item(), surprisal[i].item())
+        for i in range(batch_size)
+    ]
     
     # Tokenize prompt
     prompt_encoding = model.tokenizer(

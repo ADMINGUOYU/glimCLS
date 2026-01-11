@@ -95,11 +95,13 @@ class Stage2ReconstructionModel(nn.Module):
         # Move to device
         self.to(self.device)
 
-    def build_prompt(self) -> str:
-        """Build prompt template with special tokens."""
+    def build_prompt(self, length: float, surprisal: float) -> str:
+        """Build prompt template with special tokens and length/surprisal info."""
         eeg_seq_tokens = " ".join(["<EEG_SEQ>"] * 96)
         prompt = (
             "System: Based on the following EEG signals, reconstruct the text. "
+            f"The length of the sentence is {length:.1f} words. "
+            f"The average surprisal value is {surprisal:.2f}. "
             "Attributes: [ <SENT_VAL>, <TOPIC_VAL> ] "
             "Global Context: <EEG_GLOBAL> "
             f"Sequence: {eeg_seq_tokens} "
@@ -134,9 +136,11 @@ class Stage2ReconstructionModel(nn.Module):
         """
         batch_size = label_task1.shape[0]
 
-        # Build prompt
-        prompt = self.build_prompt()
-        prompts = [prompt] * batch_size
+        # Build prompts with length and surprisal values
+        prompts = [
+            self.build_prompt(length[i].item(), surprisal[i].item())
+            for i in range(batch_size)
+        ]
 
         # Tokenize prompt
         prompt_encoding = self.tokenizer(
@@ -222,9 +226,11 @@ class Stage2ReconstructionModel(nn.Module):
         """
         batch_size = label_task1.shape[0]
 
-        # Build prompt
-        prompt = self.build_prompt()
-        prompts = [prompt] * batch_size
+        # Build prompts with length and surprisal values
+        prompts = [
+            self.build_prompt(length[i].item(), surprisal[i].item())
+            for i in range(batch_size)
+        ]
 
         # Tokenize prompt
         prompt_encoding = self.tokenizer(
