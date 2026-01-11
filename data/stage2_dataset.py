@@ -32,6 +32,8 @@ class Stage2ReconstructionDataset(Dataset):
                 - 'sentiment label' or 'pred_sentiment_label':  sentiment label string
                 - 'topic_label' or 'pred_topic_label': topic label string
                 - 'input text': target text for reconstruction
+                - 'pred_length' or 'length': length of the sentence
+                - 'pred_surprisal' or 'surprisal': surprisal of the sentence
             sentiment_labels: List of sentiment label names for mapping to indices
             topic_labels: List of topic label names for mapping to indices
         """
@@ -48,6 +50,8 @@ class Stage2ReconstructionDataset(Dataset):
         # Prefer predicted labels if available (from Stage 1), otherwise use ground truth
         self.sentiment_col = 'pred_sentiment_label' if 'pred_sentiment_label' in df.columns else 'sentiment label'
         self.topic_col = 'pred_topic_label' if 'pred_topic_label' in df.columns else 'topic_label'
+        self.length_col = 'pred_length' if 'pred_length' in df.columns else 'length'
+        self.surprisal_col = 'pred_surprisal' if 'pred_surprisal' in df.columns else 'surprisal'
         
         # Extract data
         self.ei = df['ei'].tolist()
@@ -55,10 +59,14 @@ class Stage2ReconstructionDataset(Dataset):
         self.sentiment_labels_raw = df[self.sentiment_col].tolist()
         self.topic_labels_raw = df[self.topic_col].tolist()
         self.target_texts = df['input text'].tolist()
+        self.length = df[self.length_col].tolist()
+        self.surprisal = df[self.surprisal_col].tolist()
         
         print(f"Stage2Dataset initialized with {len(self.df)} samples")
         print(f"  Using sentiment column: {self.sentiment_col}")
         print(f"  Using topic column: {self.topic_col}")
+        print(f"  Using length column:  {self.length_col}")
+        print(f"  Using surprisal column:  {self.surprisal_col}")
         print(f"  Sentiment labels: {self.sentiment_labels}")
         print(f"  Topic labels:  {self.topic_labels}")
 
@@ -117,10 +125,16 @@ class Stage2ReconstructionDataset(Dataset):
         
         # Get target text (using 'input text' for now)
         target_text = self.target_texts[idx]
+
+        # Get length and surprisal
+        length = self.length[idx]
+        surprisal = self.surprisal[idx]
         
         return {
             'label_task1': label_task1,
             'label_task2': label_task2,
+            'length': length,
+            'surprisal': surprisal,
             'ei': ei,
             'Zi': Zi,
             'target_text': target_text
@@ -140,6 +154,8 @@ def stage2_collate_fn(batch: List[Dict]) -> Dict:
     return {
         'label_task1': torch.tensor([item['label_task1'] for item in batch], dtype=torch.long),
         'label_task2': torch.tensor([item['label_task2'] for item in batch], dtype=torch.long),
+        'length': torch.tensor([item['length'] for item in batch], dtype=torch.float),
+        'surprisal': torch.tensor([item['surprisal'] for item in batch], dtype=torch.float),
         'ei': torch.stack([item['ei'] for item in batch]),
         'Zi': torch.stack([item['Zi'] for item in batch]),
         'target_text': [item['target_text'] for item in batch]

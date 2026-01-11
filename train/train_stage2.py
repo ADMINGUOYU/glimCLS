@@ -204,9 +204,11 @@ def train_epoch(model, train_loader, optimizer, scheduler, device, epoch):
         ei = batch['ei'].to(device)
         Zi = batch['Zi'].to(device)
         target_text = batch['target_text']
+        length = batch['length'].to(device)
+        surprisal = batch['surprisal'].to(device)
 
         # Forward pass
-        loss = model(label_task1, label_task2, ei, Zi, target_text)
+        loss = model(label_task1, label_task2, length, surprisal, ei, Zi, target_text)
 
         # Backward pass
         optimizer.zero_grad()
@@ -239,8 +241,10 @@ def validate(model, val_loader, device):
             ei = batch['ei'].to(device)
             Zi = batch['Zi'].to(device)
             target_text = batch['target_text']
+            length = batch['length'].to(device)
+            surprisal = batch['surprisal'].to(device)
 
-            loss = model(label_task1, label_task2, ei, Zi, target_text)
+            loss = model(label_task1, label_task2, length, surprisal, ei, Zi, target_text)
             total_loss += loss.item()
             num_batches += 1
 
@@ -261,9 +265,11 @@ def generate_samples(model, val_loader, device, num_samples=3):
             ei = batch['ei'].to(device)
             Zi = batch['Zi'].to(device)
             target_text = batch['target_text']
+            length = batch['length'].to(device)
+            surprisal = batch['surprisal'].to(device)
 
             # Generate predictions
-            predictions = model.generate(label_task1, label_task2, ei, Zi)
+            predictions = model.generate(label_task1, label_task2, length, surprisal, ei, Zi)
 
             # Collect samples
             for i in range(len(predictions)):

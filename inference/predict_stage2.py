@@ -290,9 +290,11 @@ def collate_fn(batch: List[Dict]) -> Dict:
     return {
         'label_task1': torch.tensor([item['label_task1'] for item in batch], dtype=torch.long),
         'label_task2': torch.tensor([item['label_task2'] for item in batch], dtype=torch.long),
-        "ei": torch.stack([item["ei"] for item in batch]),
-        "Zi": torch.stack([item["Zi"] for item in batch]),
-        "target_text": [item["target_text"] for item in batch],
+        'length': torch.tensor([item['length'] for item in batch], dtype=torch.float),
+        'surprisal': torch.tensor([item['surprisal'] for item in batch], dtype=torch.float),
+        'ei': torch.stack([item['ei'] for item in batch]),
+        'Zi': torch.stack([item['Zi'] for item in batch]),
+        'target_text': [item['target_text'] for item in batch]
     }
 
 
@@ -417,6 +419,8 @@ def generate_predictions(
             ei = batch["ei"].to(device)
             Zi = batch["Zi"].to(device)
             target_texts = batch["target_text"]
+            length = batch['length'].to(device)
+            surprisal = batch['surprisal'].to(device)
             
             # Collect EEG embeddings (ei is the global EEG embedding vector)
             all_eeg_embeddings.append(ei.cpu())
@@ -426,6 +430,8 @@ def generate_predictions(
                 model=model,
                 label_task1=label_task1,
                 label_task2=label_task2,
+                length = length,
+                surprisal = surprisal,
                 ei=ei,
                 Zi=Zi,
                 max_length=max_length,
@@ -473,6 +479,8 @@ def generate_with_options(
     model: Stage2ReconstructionModel,
     label_task1: torch.Tensor,
     label_task2: torch.Tensor,
+    length: torch.Tensor,
+    surprisal: torch.Tensor,
     ei: torch.Tensor,
     Zi: torch.Tensor,
     max_length: int = 50,

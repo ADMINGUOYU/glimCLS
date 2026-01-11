@@ -111,6 +111,8 @@ class Stage2ReconstructionModel(nn.Module):
         self,
         label_task1: torch.Tensor,
         label_task2: torch.Tensor,
+        length: torch.Tensor,
+        surprisal: torch.Tensor,
         ei: torch.Tensor,
         Zi: torch.Tensor,
         target_text: list
@@ -121,6 +123,8 @@ class Stage2ReconstructionModel(nn.Module):
         Args:
             label_task1: (batch_size,) sentiment labels
             label_task2: (batch_size,) topic labels
+            length: (batch_size,) length predictions
+            surprisal: (batch_size,) surprisal prediction
             ei: (batch_size, 1024) global EEG vectors
             Zi: (batch_size, 96, 1024) EEG sequences
             target_text: List of target text strings
@@ -195,6 +199,8 @@ class Stage2ReconstructionModel(nn.Module):
         self,
         label_task1: torch.Tensor,
         label_task2: torch.Tensor,
+        length: torch.Tensor,
+        surprisal: torch.Tensor,
         ei: torch.Tensor,
         Zi: torch.Tensor,
         max_length: int = 50
@@ -205,6 +211,8 @@ class Stage2ReconstructionModel(nn.Module):
         Args:
             label_task1: (batch_size,) sentiment labels
             label_task2: (batch_size,) topic labels
+            length: (batch_size,) length predictions
+            surprisal: (batch_size,) surprisal prediction
             ei: (batch_size, 1024) global EEG vectors
             Zi: (batch_size, 96, 1024) EEG sequences
             max_length: Maximum generation length
