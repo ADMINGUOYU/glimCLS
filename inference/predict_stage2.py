@@ -713,6 +713,8 @@ def compute_metrics(predictions: List[Dict]) -> Dict:
 def compute_retrieval_metrics(
     predictions: List[Dict],
     top_k: List[int] = [1, 5, 10],
+    rand_grp: int = 5,
+    rand_btsz:int = 24,
     device: str = "cpu"
 ) -> Dict:
     """
@@ -726,6 +728,8 @@ def compute_retrieval_metrics(
             | -> "sentiment_label_idx"
             | -> "topic_label_idx"
         top_k: Top K retrieval to calculate
+        rand_grp: How many batchs to fetch in calculation
+        rand_btsz: How many samples in each batch
         device: Device to compute on
         
     Returns:
@@ -777,31 +781,62 @@ def compute_retrieval_metrics(
     pred_emb = torch.tensor(pred_emb, device = device)
     target_emb = torch.tensor(target_emb, device = device)
 
-    # 1. Normalize for cosine similarity
-    pred_emb = torch.nn.functional.normalize(pred_emb, p=2, dim=1)
-    target_emb = torch.nn.functional.normalize(target_emb, p=2, dim=1)
+    # List for results
+    result_list: List[Dict] = []
+    for _ in range(rand_grp):
 
-    # 2. Calculate Similarity Matrix (N x M)
-    scores = torch.mm(pred_emb, target_emb.transpose(0, 1))
+        # Generate index of rand_btsz of samples
+        total_rows = pred_emb.shape[0]
+        shuffled_indices = torch.randperm(total_rows)
+        random_indices = shuffled_indices[:rand_btsz]
 
-    # 3. Get Top-K indices for the largest K in the list
-    ks = top_k
-    max_k = max(ks)
-    _, topk_indices = scores.topk(max_k, dim=1)  # (N, max_k)
+        # Select rows of pred_emb and target_emb
+        selected_pred_emb = pred_emb[random_indices].clone().to(device)
+        selected_target_emb = target_emb[random_indices].clone().to(device)
 
-    # 4. Check if ground_truth index is in the top-k retrieved indices
-    # We expand ground_truth to (N, max_k) to compare directly
-    # - Ground Truth: Index i in queries should match index i in gallery
-    # (Assuming queries[i] matches gallery[i])
-    ground_truth = torch.arange(pred_emb.size(0), device = pred_emb.device).view(-1, 1)
-    correct = topk_indices.eq(ground_truth.view(-1, 1).expand_as(topk_indices))
+        # Assign first to be GT
+        selected_pred_emb[0] = selected_target_emb[0]
 
-    results = {}
-    for k in ks:
-        # Sum correct matches within the first k columns
-        correct_k = correct[:, :k].reshape(-1).float().sum(0)
-        acc = float(correct_k / pred_emb.size(0))
-        results[f"retrieval_acc_top{k:02d}"] = acc
+        # 1. Normalize for cosine similarity
+        pred_emb = torch.nn.functional.normalize(selected_pred_emb, p=2, dim=1)
+        target_emb = torch.nn.functional.normalize(selected_target_emb, p=2, dim=1)
+
+        # 2. Calculate Similarity Matrix (N x M)
+        scores = torch.mm(selected_pred_emb, selected_target_emb.transpose(0, 1))
+
+        # 3. Get Top-K indices for the largest K in the list
+        ks = top_k
+        max_k = max(ks)
+        _, topk_indices = scores.topk(max_k, dim=1)  # (N, max_k)
+
+        # 4. Check if ground_truth index is in the top-k retrieved indices
+        # We expand ground_truth to (N, max_k) to compare directly
+        # - Ground Truth: Index i in queries should match index i in gallery
+        # (Assuming queries[i] matches gallery[i])
+        ground_truth = torch.arange(selected_pred_emb.size(0), device = device).view(-1, 1)
+        correct = topk_indices.eq(ground_truth.view(-1, 1).expand_as(topk_indices))
+
+        results = { }
+        for k in ks:
+            # Sum correct matches within the first k columns
+            correct_k = correct[:, :k].reshape(-1).float().sum(0)
+            acc = float(correct_k / selected_pred_emb.size(0))
+            results[f"retrieval_acc_top{k:02d}"] = acc
+
+        # Append to list
+        result_list.append(results)
+
+    # Take Average
+    results_to_return = { }
+    keys = list(result_list[0].keys())
+    for key in keys:
+        accumulative = 0.0
+        # Some every batch (low efficiency, but EASY coding)
+        for i in range(rand_grp):
+            accumulative += result_list[i][key]
+        accumulative /= float(rand_grp)
+        # Log that to the return dict
+        results_to_return[key] = accumulative
     
     return results
 
