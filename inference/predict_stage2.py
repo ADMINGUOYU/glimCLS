@@ -7,6 +7,13 @@ This script loads a trained Stage 2 model checkpoint and generates text predicti
 from EEG embeddings (ei, Zi) and classification labels.
 """
 
+PATH_TO_VARIANTS = './data/zuco_preprocessed_dataframe/zuco_label_8variants.df'
+VARIANT_KEYS = \
+    ['lexical simplification (v0)', 'lexical simplification (v1)',
+    'semantic clarity (v0)', 'semantic clarity (v1)',
+    'syntax simplification (v0)', 'syntax simplification (v1)',
+    'naive rewritten', 'naive simplified']
+
 import os
 import sys
 import argparse
@@ -577,6 +584,10 @@ def compute_metrics(predictions: List[Dict]) -> Dict:
     
     # Per-sample metrics for detailed analysis
     per_sample_metrics = []
+
+    # Load variants table
+    var_df : pd.DataFrame = pd.read_pickle(PATH_TO_VARIANTS)
+    print(f"Received variants dataframe columns: {var_df.columns.to_list()}")
     
     print("\nComputing metrics...")
     for pred_dict in tqdm(predictions, desc="Computing metrics"):
@@ -588,15 +599,24 @@ def compute_metrics(predictions: List[Dict]) -> Dict:
             pred_text = " "  # Use space to avoid empty string issues
         if not target_text or not target_text.strip():
             target_text = " "
+
+        # Look up for raw and variants
+        index = var_df.index[var_df['input text'] == target_text].to_list()
+        assert len(index) > 0, f"[ERROR] Input text {target_text} not found"
+        index = index[0]
+        raw_text = var_df.loc[index, 'raw text']
+        variants = []
+        for key in VARIANT_KEYS:
+            variants.append(var_df.loc[index, key])
         
         # Compute BLEU scores (n-gram 1-4)
         # Following GLIM:  bleu_score([pred], [targets], n_gram=n)
         # Note: targets can be a tuple/list for multiple references, here we use single reference
         try:
-            b1 = bleu_score([pred_text], [[target_text]], n_gram=1)
-            b2 = bleu_score([pred_text], [[target_text]], n_gram=2)
-            b3 = bleu_score([pred_text], [[target_text]], n_gram=3)
-            b4 = bleu_score([pred_text], [[target_text]], n_gram=4)
+            b1 = bleu_score([pred_text], [variants], n_gram=1)
+            b2 = bleu_score([pred_text], [variants], n_gram=2)
+            b3 = bleu_score([pred_text], [variants], n_gram=3)
+            b4 = bleu_score([pred_text], [variants], n_gram=4)
         except Exception as e:
             # Fallback for edge cases (very short texts, etc.)
             b1 = b2 = b3 = b4 = torch.tensor(0.0)
@@ -609,7 +629,7 @@ def compute_metrics(predictions: List[Dict]) -> Dict:
         # Compute ROUGE-1 scores
         # Following GLIM: rouge_score([pred], [targets], rouge_keys='rouge1')
         try:
-            rouge1_dict = rouge_score([pred_text], [[target_text]], rouge_keys='rouge1')
+            rouge1_dict = rouge_score([pred_text], [[raw_text]], rouge_keys='rouge1')
             r1_fmeasure = rouge1_dict['rouge1_fmeasure']
             r1_precision = rouge1_dict['rouge1_precision']
             r1_recall = rouge1_dict['rouge1_recall']
@@ -623,7 +643,7 @@ def compute_metrics(predictions: List[Dict]) -> Dict:
         # Compute Word Error Rate
         # Following GLIM: word_error_rate([pred], [target])
         try:
-            wer = word_error_rate([pred_text], [target_text])
+            wer = word_error_rate([pred_text], [raw_text])
         except Exception as e:
             wer = torch.tensor(1.0)  # Maximum error for edge cases
         
