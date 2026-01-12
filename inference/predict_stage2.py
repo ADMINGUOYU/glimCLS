@@ -109,35 +109,6 @@ def parse_args():
         default=50,
         help="Maximum generation length"
     )
-    parser.add_argument(
-        "--num_beams",
-        type=int,
-        default=1,
-        help="Number of beams for beam search (1 = greedy)"
-    )
-    parser.add_argument(
-        "--do_sample",
-        action="store_true",
-        help="Use sampling instead of greedy/beam search"
-    )
-    parser.add_argument(
-        "--temperature",
-        type=float,
-        default=1.0,
-        help="Sampling temperature (only used if --do_sample)"
-    )
-    parser.add_argument(
-        "--top_k",
-        type=int,
-        default=50,
-        help="Top-k sampling (only used if --do_sample)"
-    )
-    parser.add_argument(
-        "--top_p",
-        type=float,
-        default=1.0,
-        help="Top-p (nucleus) sampling (only used if --do_sample)"
-    )
     
     # Device arguments
     parser.add_argument(
@@ -374,11 +345,6 @@ def generate_predictions(
     dataloader: torch.utils.data.DataLoader,
     device: str,
     max_length: int = 50,
-    num_beams: int = 1,
-    do_sample: bool = False,
-    temperature: float = 1.0,
-    top_k: int = 50,
-    top_p: float = 1.0,
     verbose: bool = False,
     num_samples_to_print: int = 5
 ) -> Tuple[List[Dict], torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -390,11 +356,6 @@ def generate_predictions(
         dataloader: DataLoader for inference
         device: Device to use
         max_length: Maximum generation length
-        num_beams: Number of beams for beam search
-        do_sample: Use sampling instead of greedy/beam search
-        temperature: Sampling temperature
-        top_k: Top-k sampling
-        top_p: Top-p sampling
         verbose: Print sample predictions
         num_samples_to_print: Number of samples to print
         
@@ -426,21 +387,17 @@ def generate_predictions(
             all_eeg_embeddings.append(ei.cpu())
             
             # Generate predictions
-            predictions = generate_with_options(
-                model=model,
-                label_task1=label_task1,
-                label_task2=label_task2,
-                length = length,
-                surprisal = surprisal,
-                ei=ei,
-                Zi=Zi,
-                max_length=max_length,
-                num_beams=num_beams,
-                do_sample=do_sample,
-                temperature=temperature,
-                top_k=top_k,
-                top_p=top_p
-            )
+            predictions = model.generate(label_task1, label_task2, length, surprisal, ei, Zi, max_length)
+
+            # !!!!! WARNING: This is an update
+            # Locate generated portion AFTER 'Target: '
+            for idx in range(len(predictions)):
+                _ , separator, after = predictions[idx].partition("Target: ")
+                if separator:
+                    # If "Target: " was found, 'after' will contain the rest of the string
+                    predictions[idx] = after
+                else:
+                    raise "[ERROR] No keyword 'Target: ' found in prediction"
             
             # Encode generated texts to embeddings
             gen_text_emb = encode_text_to_embedding(model, predictions, device)
@@ -473,94 +430,6 @@ def generate_predictions(
     target_text_embeddings = torch.cat(all_target_text_embeddings, dim=0)
     
     return all_predictions, eeg_embeddings, gen_text_embeddings, target_text_embeddings
-
-
-def generate_with_options(
-    model: Stage2ReconstructionModel,
-    label_task1: torch.Tensor,
-    label_task2: torch.Tensor,
-    length: torch.Tensor,
-    surprisal: torch.Tensor,
-    ei: torch.Tensor,
-    Zi: torch.Tensor,
-    max_length: int = 50,
-    num_beams: int = 1,
-    do_sample: bool = False,
-    temperature: float = 1.0,
-    top_k: int = 50,
-    top_p: float = 1.0
-) -> List[str]:
-    """
-    Generate text with configurable generation options.
-    
-    This extends the model's generate method with more options. 
-
-    -> generated replica of stage 2 model -> generate()
-    More options provided
-
-    """
-    batch_size = label_task1.shape[0]
-    device = label_task1.device
-    
-    # Build prompt
-    # Build prompts with length and surprisal values
-    prompts = [
-        model.build_prompt(length[i].item(), surprisal[i].item())
-        for i in range(batch_size)
-    ]
-    
-    # Tokenize prompt
-    prompt_encoding = model.tokenizer(
-        prompts,
-        return_tensors="pt",
-        padding=True,
-        truncation=True
-    ).to(device)
-    input_ids = prompt_encoding.input_ids
-    
-    # Get initial embeddings
-    embeds = model.model.shared(input_ids)
-    
-    # Cast inputs to model dtype
-    sent_embs = model.label_embed_task1(label_task1).to(embeds.dtype)
-    topic_embs = model.label_embed_task2(label_task2).to(embeds.dtype)
-    ei = ei.to(embeds.dtype)
-    Zi = Zi.to(embeds.dtype)
-    
-    # Find token positions
-    sent_mask = (input_ids == model.sent_val_id)
-    topic_mask = (input_ids == model.topic_val_id)
-    global_mask = (input_ids == model.eeg_global_id)
-    seq_mask = (input_ids == model.eeg_seq_id)
-    
-    # Direct assignment
-    batch_indices = torch.arange(batch_size, device=device)
-    embeds[batch_indices, sent_mask.long().argmax(dim=1)] = sent_embs
-    embeds[batch_indices, topic_mask.long().argmax(dim=1)] = topic_embs
-    embeds[batch_indices, global_mask.long().argmax(dim=1)] = ei
-    
-    Zi_flat = Zi.view(-1, 1024)
-    embeds[seq_mask] = Zi_flat
-    
-    # Generate with options
-    gen_kwargs = {
-        "inputs_embeds": embeds,
-        "max_length": max_length,
-        "num_beams": num_beams,
-        "do_sample": do_sample,
-    }
-    
-    if do_sample:
-        gen_kwargs["temperature"] = temperature
-        gen_kwargs["top_k"] = top_k
-        gen_kwargs["top_p"] = top_p
-    
-    # !!! We need this to generate
-    outputs = model.model.generate(**gen_kwargs)
-    
-    # Decode
-    generated_texts = model.tokenizer.batch_decode(outputs, skip_special_tokens=True)
-    return generated_texts
 
 
 def compute_metrics(predictions: List[Dict]) -> Dict:
@@ -900,8 +769,6 @@ def main():
     print(f"Split: {args.split}")
     print(f"Batch size: {args.batch_size}")
     print(f"Max length: {args.max_length}")
-    print(f"Num beams: {args.num_beams}")
-    print(f"Do sample: {args.do_sample}")
     print(f"Device: {device}")
     print("=" * 60)
     
@@ -936,11 +803,6 @@ def main():
         dataloader=dataloader,
         device=device,
         max_length=args.max_length,
-        num_beams=args.num_beams,
-        do_sample=args.do_sample,
-        temperature=args.temperature,
-        top_k=args.top_k,
-        top_p=args.top_p,
         verbose=args.verbose,
         num_samples_to_print=args.num_samples_to_print
     )

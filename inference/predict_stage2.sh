@@ -28,19 +28,11 @@ TOPIC_LABELS=("Biographies and Factual Knowledge" "Movie Reviews and Sentiment")
 
 # Generation parameters
 MAX_LENGTH=50
-NUM_BEAMS=1          # 1 = greedy, >1 = beam search
-
-# Params suggested by claude, maybe not used at all
-# Too lazy ...
-DO_SAMPLE=false      # Set to true for sampling-based generation
-TEMPERATURE=1.0      # Only used if DO_SAMPLE=true
-TOP_K=50             # Only used if DO_SAMPLE=true
-TOP_P=1.0            # Only used if DO_SAMPLE=true
 
 # Inference settings
 BATCH_SIZE=72
 DEVICE="cuda:0"
-SPLIT="all"         # Options: "train", "val", "test", "all"
+SPLIT="test"         # Options: "train", "val", "test", "all"
 
 # Verbosity
 VERBOSE=true
@@ -61,8 +53,6 @@ echo "  Freeze Strategy: $FREEZE_STRATEGY"
 echo "  Split: $SPLIT"
 echo "  Batch Size: $BATCH_SIZE"
 echo "  Max Length: $MAX_LENGTH"
-echo "  Num Beams: $NUM_BEAMS"
-echo "  Do Sample: $DO_SAMPLE"
 echo "  Device: $DEVICE"
 echo "=========================================="
 echo
@@ -76,22 +66,11 @@ CMD="python -m inference.predict_stage2 \
     --freeze_strategy \"$FREEZE_STRATEGY\" \
     --lora_rank $LORA_RANK \
     --max_length $MAX_LENGTH \
-    --num_beams $NUM_BEAMS \
     --batch_size $BATCH_SIZE \
     --device \"$DEVICE\" \
     --split \"$SPLIT\""
 CMD+=(--sentiment_labels "${SENTIMENT_LABELS[@]}")
 CMD+=(--topic_labels "${TOPIC_LABELS[@]}")
-
-# Add sampling options if enabled
-if [ "$DO_SAMPLE" = true ]; then
-    CMD="$CMD --do_sample --temperature $TEMPERATURE --top_k $TOP_K --top_p $TOP_P"
-fi
-
-# Add verbosity
-if [ "$VERBOSE" = true ]; then
-    CMD="$CMD --verbose --num_samples_to_print $NUM_SAMPLES_TO_PRINT"
-fi
 
 # Run inference
 echo "Running inference..."
