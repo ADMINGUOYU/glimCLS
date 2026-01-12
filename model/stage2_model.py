@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from transformers import T5ForConditionalGeneration, T5Tokenizer
+from transformers.modeling_outputs import BaseModelOutput
 from peft import LoraConfig, get_peft_model
 from typing import Dict, Optional
 
@@ -16,7 +17,12 @@ class Stage2ReconstructionModel(nn.Module):
         model_name: str = "google/flan-t5-large",
         freeze_strategy: str = "lora",
         lora_rank: int = 8,
+        attention_mask_type: str = "bidirectional",
+        use_ei: bool = True,
+        use_projector: bool = True,
         label_embed_init: Optional[Dict] = None,
+        sentiment_labels: list = None,
+        topic_labels: list = None,
         device: str = "cuda:0"
     ):
         """
@@ -24,12 +30,24 @@ class Stage2ReconstructionModel(nn.Module):
             model_name: Hugging Face model name
             freeze_strategy: 'lora' or 'full_freeze_llm' or 'full_trainable_llm'
             lora_rank: LoRA rank
+            attention_mask_type: 'bidirectional' or 'causal' (both use full visibility for now)
+            use_ei: Whether to prepend global EEG feature (ei) to sequence features (Zi)
+            use_projector: Whether to use trainable projection layer for feature alignment
             label_embed_init: Optional pre-trained label embeddings
+            sentiment_labels: List of sentiment label names
+            topic_labels: List of topic label names
             device: Device to use
         """
         super().__init__()
         self.device = torch.device(device)
         self.freeze_strategy = freeze_strategy
+        self.attention_mask_type = attention_mask_type
+        self.use_ei = use_ei
+        self.use_projector = use_projector
+
+        # Store label names for prompt generation
+        self.sentiment_labels = sentiment_labels if sentiment_labels else ['non_neutral', 'neutral']
+        self.topic_labels = topic_labels if topic_labels else ['Biographies and Factual Knowledge', 'Movie Reviews and Sentiment']
 
         # Determine dtype based on hardware support
         if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
@@ -97,22 +115,47 @@ class Stage2ReconstructionModel(nn.Module):
             for param in self.model.parameters():
                 param.requires_grad = True
 
+        # Initialize trainable projection layer for feature alignment
+        if self.use_projector:
+            self.projector = nn.Linear(1024, self.model.config.d_model)
+            # Ensure projector is always trainable
+            for param in self.projector.parameters():
+                param.requires_grad = True
+
         # Move to device
         self.to(self.device)
 
-    def build_prompt(self, length: float, surprisal: float) -> str:
-        """Build prompt template with special tokens and length/surprisal info."""
+    def build_prompt(self, sentiment_idx: int, topic_idx: int, length: float, surprisal: float) -> str:
+        """Build prompt template with label text and EEG metadata."""
+        sentiment_text = self.sentiment_labels[sentiment_idx]
+        topic_text = self.topic_labels[topic_idx]
+
         eeg_seq_tokens = " ".join(["<EEG_SEQ>"] * 96)
         prompt = (
             "System: Based on the following EEG signals, reconstruct the text. "
             f"The length of the sentence is {length:.1f} words. "
             f"The average surprisal value is {surprisal:.2f}. "
-            "Attributes: [ <SENT_VAL>, <TOPIC_VAL> ] "
-            "Global Context: <EEG_GLOBAL> "
-            f"Sequence: {eeg_seq_tokens} "
+            f"Sentiment: {sentiment_text}. Topic: {topic_text}. "
             "Target:"
         )
         return prompt
+
+    def create_cross_attention_mask(self, batch_size: int, encoder_seq_len: int) -> Optional[torch.Tensor]:
+        """
+        Create cross-attention mask for decoder attending to encoder hidden states.
+
+        Note: Currently both modes return None (full visibility).
+        The attention_mask_type parameter is reserved for future use.
+
+        Args:
+            batch_size: Batch size
+            encoder_seq_len: Length of encoder hidden states (96 or 97 for Zi/[ei,Zi])
+
+        Returns:
+            None (full visibility for both modes)
+        """
+        # Both modes use full visibility for now
+        return None
 
     def forward(
         self,
@@ -125,11 +168,11 @@ class Stage2ReconstructionModel(nn.Module):
         target_text: list
     ) -> torch.Tensor:
         """
-        Forward pass with vectorized embedding injection.
+        Forward pass with EEG features as encoder hidden states.
 
         Args:
-            label_task1: (batch_size,) sentiment labels
-            label_task2: (batch_size,) topic labels
+            label_task1: (batch_size,) sentiment labels (kept for compatibility)
+            label_task2: (batch_size,) topic labels (kept for compatibility)
             length: (batch_size,) length predictions
             surprisal: (batch_size,) surprisal prediction
             ei: (batch_size, 1024) global EEG vectors
@@ -141,64 +184,66 @@ class Stage2ReconstructionModel(nn.Module):
         """
         batch_size = label_task1.shape[0]
 
-        # Build prompts with length and surprisal values
+        # Build prompts with label text
         prompts = [
-            self.build_prompt(length[i].item(), surprisal[i].item())
+            self.build_prompt(label_task1[i].item(), label_task2[i].item(), length[i].item(), surprisal[i].item())
             for i in range(batch_size)
         ]
 
-        # Tokenize prompt
-        prompt_encoding = self.tokenizer(
-            prompts,
-            return_tensors='pt',
-            padding=True,
-            truncation=True
-        ).to(self.device)
-        input_ids = prompt_encoding.input_ids
+        # Tokenize prompts WITHOUT padding (returns list of token lists)
+        prompt_encodings = self.tokenizer(prompts, padding=False, truncation=True)
+        prompt_ids_list = prompt_encodings['input_ids']  # List of lists
 
-        # Get initial embeddings
-        embeds = self.model.shared(input_ids)
+        # Tokenize targets WITHOUT padding
+        target_encodings = self.tokenizer(target_text, padding=False, truncation=True)
+        target_ids_list = target_encodings['input_ids']  # List of lists
 
-        # Cast inputs to model dtype
-        sent_embs = self.label_embed_task1(label_task1).to(embeds.dtype)
-        topic_embs = self.label_embed_task2(label_task2).to(embeds.dtype)
-        ei = ei.to(embeds.dtype)
-        Zi = Zi.to(embeds.dtype)
+        # Concatenate at list level: remove EOS from prompt, keep EOS in target
+        merged_ids_list = []
+        prompt_lengths = []  # Track prompt length (without EOS) for masking
+        for prompt_ids, target_ids in zip(prompt_ids_list, target_ids_list):
+            # Remove EOS from prompt (last token)
+            prompt_no_eos = prompt_ids[:-1] if len(prompt_ids) > 0 else []
+            prompt_lengths.append(len(prompt_no_eos))
+            # Concatenate
+            merged_ids = prompt_no_eos + target_ids
+            merged_ids_list.append(merged_ids)
 
-        # Find token positions using masks
-        sent_mask = (input_ids == self.sent_val_id)
-        topic_mask = (input_ids == self.topic_val_id)
-        global_mask = (input_ids == self.eeg_global_id)
-        seq_mask = (input_ids == self.eeg_seq_id)
+        # Pad merged sequences to create batch tensor
+        max_len = max(len(ids) for ids in merged_ids_list)
+        labels = torch.full((batch_size, max_len), self.tokenizer.pad_token_id, dtype=torch.long, device=self.device)
+        for i, ids in enumerate(merged_ids_list):
+            labels[i, :len(ids)] = torch.tensor(ids, dtype=torch.long, device=self.device)
 
-        # Direct assignment for single-token attributes
-        batch_indices = torch.arange(batch_size, device=self.device)
-        sent_positions = sent_mask.long().argmax(dim=1)
-        topic_positions = topic_mask.long().argmax(dim=1)
-        global_positions = global_mask.long().argmax(dim=1)
+        # Create decoder_input_ids by prepending pad_token_id (teacher forcing shift)
+        pad_token_tensor = torch.full((batch_size, 1), self.tokenizer.pad_token_id, dtype=torch.long, device=self.device)
+        decoder_input_ids = torch.cat([pad_token_tensor, labels[:, :-1]], dim=1)  # (batch_size, max_len)
 
-        embeds[batch_indices, sent_positions] = sent_embs
-        embeds[batch_indices, topic_positions] = topic_embs
-        embeds[batch_indices, global_positions] = ei
+        # Mask prompt portion in labels (set to -100)
+        for i, prompt_len in enumerate(prompt_lengths):
+            labels[i, :prompt_len] = -100  # Mask prompt tokens
+        labels[labels == self.tokenizer.pad_token_id] = -100  # Mask padding tokens
 
-        # Flatten Zi for sequence replacement
-        Zi_flat = Zi.view(-1, 1024)
-        assert seq_mask.sum() == Zi.numel() // 1024, f"Mask count {seq_mask.sum()} != Zi elements {Zi.numel() // 1024}"
-        embeds[seq_mask] = Zi_flat
+        # Prepare encoder_hidden_states: optionally prepend ei to Zi
+        if self.use_ei:
+            # Prepend ei (batch_size, 1024) to Zi (batch_size, 96, 1024)
+            ei_expanded = ei.unsqueeze(1)  # (batch_size, 1, 1024)
+            raw_features = torch.cat([ei_expanded, Zi], dim=1)  # (batch_size, 97, 1024)
+        else:
+            raw_features = Zi  # (batch_size, 96, 1024)
 
-        # Tokenize target text
-        target_encoding = self.tokenizer(
-            target_text,
-            return_tensors='pt',
-            padding=True,
-            truncation=True
-        ).to(self.device)
-        labels = target_encoding.input_ids
-        labels[labels == self.tokenizer.pad_token_id] = -100
+        # Apply projection layer if enabled
+        if self.use_projector:
+            encoder_hidden_states = self.projector(raw_features)  # (batch_size, seq_len, d_model)
+        else:
+            encoder_hidden_states = raw_features
 
-        # Forward pass
+        encoder_hidden_states = encoder_hidden_states.to(self.model_dtype)
+
+        # Forward pass with encoder_hidden_states
         outputs = self.model(
-            inputs_embeds=embeds,
+            decoder_input_ids=decoder_input_ids,
+            encoder_outputs=(encoder_hidden_states,),  # Tuple format required by T5
             labels=labels
         )
 
@@ -216,70 +261,80 @@ class Stage2ReconstructionModel(nn.Module):
     ) -> list:
         """
         Generate text from EEG features.
-
-        Args:
-            label_task1: (batch_size,) sentiment labels
-            label_task2: (batch_size,) topic labels
-            length: (batch_size,) length predictions
-            surprisal: (batch_size,) surprisal prediction
-            ei: (batch_size, 1024) global EEG vectors
-            Zi: (batch_size, 96, 1024) EEG sequences
-            max_length: Maximum generation length
-
-        Returns:
-            List of generated text strings
         """
         batch_size = label_task1.shape[0]
 
-        # Build prompts with length and surprisal values
+        # Build prompts with label text
         prompts = [
-            self.build_prompt(length[i].item(), surprisal[i].item())
+            self.build_prompt(label_task1[i].item(), label_task2[i].item(), length[i].item(), surprisal[i].item())
             for i in range(batch_size)
         ]
 
-        # Tokenize prompt
-        prompt_encoding = self.tokenizer(
-            prompts,
-            return_tensors='pt',
-            padding=True,
-            truncation=True
-        ).to(self.device)
-        input_ids = prompt_encoding.input_ids
+        # 1. Tokenize prompts WITHOUT padding (to safely handle EOS removal)
+        prompt_encodings = self.tokenizer(prompts, padding=False, truncation=True)
+        prompt_ids_list = prompt_encodings['input_ids']
 
-        # Get initial embeddings
-        embeds = self.model.shared(input_ids)
+        # 2. Process prompts: Remove EOS & Prepend PAD (Start Token)
+        # T5 generation expects to start with a PAD token effectively acting as <BOS>
+        processed_prompt_ids = []
+        for p_ids in prompt_ids_list:
+            # Remove EOS if it exists (T5 tokenizer adds it by default)
+            if p_ids[-1] == self.tokenizer.eos_token_id:
+                p_ids = p_ids[:-1]
 
-        # Cast inputs to model dtype
-        sent_embs = self.label_embed_task1(label_task1).to(embeds.dtype)
-        topic_embs = self.label_embed_task2(label_task2).to(embeds.dtype)
-        ei = ei.to(embeds.dtype)
-        Zi = Zi.to(embeds.dtype)
+            # Prepend PAD token (Crucial for aligning with training distribution)
+            # Training: [PAD, Prompt, Target]
+            # Inference Input: [PAD, Prompt] -> Model generates Target
+            p_ids = [self.tokenizer.pad_token_id] + p_ids
+            processed_prompt_ids.append(p_ids)
 
-        # Find token positions
-        sent_mask = (input_ids == self.sent_val_id)
-        topic_mask = (input_ids == self.topic_val_id)
-        global_mask = (input_ids == self.eeg_global_id)
-        seq_mask = (input_ids == self.eeg_seq_id)
+        # 3. Pad manually to create batch tensor
+        max_len = max(len(p) for p in processed_prompt_ids)
+        decoder_input_ids = torch.full(
+            (batch_size, max_len),
+            self.tokenizer.pad_token_id,
+            dtype=torch.long,
+            device=self.device
+        )
 
-        # Direct assignment
-        batch_indices = torch.arange(batch_size, device=self.device)
-        embeds[batch_indices, sent_mask.long().argmax(dim=1)] = sent_embs
-        embeds[batch_indices, topic_mask.long().argmax(dim=1)] = topic_embs
-        embeds[batch_indices, global_mask.long().argmax(dim=1)] = ei
+        for i, p_ids in enumerate(processed_prompt_ids):
+            decoder_input_ids[i, :len(p_ids)] = torch.tensor(p_ids, dtype=torch.long, device=self.device)
 
-        Zi_flat = Zi.view(-1, 1024)
-        embeds[seq_mask] = Zi_flat
+        # Prepare encoder_hidden_states: optionally prepend ei to Zi
+        if self.use_ei:
+            ei_expanded = ei.unsqueeze(1)  # (batch_size, 1, 1024)
+            raw_features = torch.cat([ei_expanded, Zi], dim=1)  # (batch_size, 97, 1024)
+        else:
+            raw_features = Zi  # (batch_size, 96, 1024)
+
+        # Apply projection layer if enabled
+        if self.use_projector:
+            encoder_hidden_states = self.projector(raw_features)  # (batch_size, seq_len, d_model)
+        else:
+            encoder_hidden_states = raw_features
+
+        encoder_hidden_states = encoder_hidden_states.to(self.model_dtype)
+
+        # Wrap encoder hidden states in BaseModelOutput for generate method
+        encoder_outputs = BaseModelOutput(last_hidden_state=encoder_hidden_states)
 
         # Generate
         outputs = self.model.generate(
-            inputs_embeds=embeds,
-            max_length=max_length,
+            decoder_input_ids=decoder_input_ids,
+            encoder_outputs=encoder_outputs,
+            max_length=max_length + decoder_input_ids.shape[1], # Adjust max_length to include prompt
             num_beams=1,
             do_sample=False
         )
 
         # Decode
         generated_texts = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+
+        # Optional post-processing: Remove the prompt text from the output if T5 repeats it
+        # (Usually T5 generate output includes the input prefix if decoder_input_ids is passed?
+        # Actually T5 generate output starts *after* the decoder_input_ids usually,
+        # but let's stick to standard decoding first.)
+
         return generated_texts
 
     def load_label_embeddings(self, state_dict: Dict):

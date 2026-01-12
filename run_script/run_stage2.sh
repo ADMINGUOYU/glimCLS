@@ -10,6 +10,13 @@
 #     ├── training.log    # Console output log
 #     └── training_error.log  # Error log
 
+# Set Hugging Face cache directory
+export HF_HOME="/mnt/afs/250010218/hf_cache"
+export TRANSFORMERS_CACHE="/mnt/afs/250010218/hf_cache"
+
+# Create cache directory if it doesn't exist
+mkdir -p "$HF_HOME"
+
 # ============================================================================
 # CONFIGURATION PARAMETERS
 # ============================================================================
@@ -23,7 +30,6 @@ NUM_WORKERS=4
 SEED=42
 
 # Label configuration (only used when DATA_PATH is set)
-SENTIMENT_LABELS=("non_neutral" "neutral")
 TOPIC_LABELS=("Biographies and Factual Knowledge" "Movie Reviews and Sentiment")
 
 # Model Architecture
@@ -31,16 +37,25 @@ TEXT_MODEL="google/flan-t5-large"
 FREEZE_STRATEGY="full_trainable_llm"  # Options: "lora" or "full_freeze_llm" or "full_trainable_llm"
 LORA_RANK=8
 
+# Attention Mask Strategy
+ATTENTION_MASK_TYPE="bidirectional"  # Options: "bidirectional" or "causal"
+
+# Global EEG Feature
+USE_EI=true  # Set to false to disable global EEG feature
+
+# Projection Layer
+USE_PROJECTOR=true  # Set to false to disable trainable projection layer
+
 # Label Embedding Initialization (Optional)
 # Leave empty ("") to use random initialization
 # Provide path to checkpoint containing pre-trained label embeddings
 LABEL_EMBED_INIT=""
 
 # Training
-MAX_EPOCHS=50
+MAX_EPOCHS=30
 LR=2e-4
 MIN_LR=1e-6
-WARMUP_EPOCHS=15
+WARMUP_EPOCHS=5
 WEIGHT_DECAY=0.01
 
 # Hardware
@@ -57,6 +72,9 @@ echo "Stage 2 Training Configuration:"
 echo "  Text Model: $TEXT_MODEL"
 echo "  Freeze Strategy: $FREEZE_STRATEGY"
 echo "  LoRA Rank: $LORA_RANK"
+echo "  Attention Mask Type: $ATTENTION_MASK_TYPE"
+echo "  Use Global EEG (ei): $USE_EI"
+echo "  Use Projection Layer: $USE_PROJECTOR"
 if [ -n "$DATA_PATH" ]; then
     echo "  Data Path: $DATA_PATH"
     echo -n "  Sentiment Labels: "
@@ -93,10 +111,25 @@ CMD="python -m train.train_stage2 \
     --text_model \"$TEXT_MODEL\" \
     --freeze_strategy \"$FREEZE_STRATEGY\" \
     --lora_rank $LORA_RANK \
+    --attention_mask_type \"$ATTENTION_MASK_TYPE\" \
     --device \"$DEVICE\" \
     --log_dir \"$LOG_DIR\" \
     --experiment_name \"$EXPERIMENT_NAME\" \
     --seed $SEED"
+
+# Add use_ei flag
+if [ "$USE_EI" = true ]; then
+    CMD="$CMD --use_ei"
+else
+    CMD="$CMD --no_use_ei"
+fi
+
+# Add use_projector flag
+if [ "$USE_PROJECTOR" = true ]; then
+    CMD="$CMD --use_projector"
+else
+    CMD="$CMD --no_projector"
+fi
 
 # Add data path or data size
 if [ -n "$DATA_PATH" ]; then

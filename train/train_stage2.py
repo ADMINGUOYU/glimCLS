@@ -126,6 +126,37 @@ def parse_args():
         default=None,
         help='Path to pre-trained label embeddings (optional)'
     )
+    parser.add_argument(
+        '--attention_mask_type',
+        type=str,
+        default='bidirectional',
+        choices=['bidirectional', 'causal'],
+        help='Cross-attention mask type: bidirectional (full visibility) or causal (sequential)'
+    )
+    parser.add_argument(
+        '--use_ei',
+        action='store_true',
+        default=True,
+        help='Prepend global EEG feature (ei) to sequence features (Zi)'
+    )
+    parser.add_argument(
+        '--no_use_ei',
+        action='store_false',
+        dest='use_ei',
+        help='Do not use global EEG feature (ei)'
+    )
+    parser.add_argument(
+        '--use_projector',
+        action='store_true',
+        default=True,
+        help='Use trainable projection layer for feature alignment'
+    )
+    parser.add_argument(
+        '--no_projector',
+        action='store_false',
+        dest='use_projector',
+        help='Do not use projection layer'
+    )
 
     # Training arguments
     parser.add_argument(
@@ -367,6 +398,9 @@ def main():
     print(f"Text model: {args.text_model}")
     print(f"Freeze strategy: {args.freeze_strategy}")
     print(f"LoRA rank: {args.lora_rank}")
+    print(f"Attention mask type: {args.attention_mask_type}")
+    print(f"Use global EEG (ei): {args.use_ei}")
+    print(f"Use projection layer: {args.use_projector}")
     print(f"Max epochs: {args.max_epochs}")
     print(f"Learning rate: {args.lr} (max), {args.min_lr} (min)")
     print(f"Warmup epochs: {args.warmup_epochs}")
@@ -403,7 +437,12 @@ def main():
         model_name=args.text_model,
         freeze_strategy=args.freeze_strategy,
         lora_rank=args.lora_rank,
+        attention_mask_type=args.attention_mask_type,
+        use_ei=args.use_ei,
+        use_projector=args.use_projector,
         label_embed_init=None,
+        sentiment_labels=args.sentiment_labels,
+        topic_labels=args.topic_labels,
         device=args.device
     )
     print("Model initialized successfully")
