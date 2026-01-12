@@ -19,7 +19,7 @@ OUTPUT_PATH="${OUTPUT_DIR}/predictions_stage2_${TIMESTAMP}.csv"
 
 # Model configuration (should match training)
 TEXT_MODEL="google/flan-t5-large"
-FREEZE_STRATEGY="lora"  # Options: "lora" or "full_freeze_llm"
+FREEZE_STRATEGY="lora"  # Options: "lora" or "full_freeze_llm" [will read from model state dict, no need to specify here]
 LORA_RANK=8
 
 # Label configuration (should match training)
