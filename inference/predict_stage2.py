@@ -32,7 +32,6 @@ from data.stage2_dataset import Stage2ReconstructionDataset
 
 # Import torchmetrics for evaluation (following GLIM approach)
 from torchmetrics.functional.text import bleu_score, rouge_score, word_error_rate
-from torchmetrics.functional.classification import multiclass_accuracy
 
 
 def parse_args():
@@ -397,7 +396,7 @@ def generate_predictions(
                     # If "Target: " was found, 'after' will contain the rest of the string
                     predictions[idx] = after
                 else:
-                    raise "[ERROR] No keyword 'Target: ' found in prediction"
+                    predictions[idx] = " " # Use empty space as prediction
             
             # Encode generated texts to embeddings
             gen_text_emb = encode_text_to_embedding(model, predictions, device)

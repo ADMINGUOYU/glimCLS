@@ -50,6 +50,8 @@ class TeeLogger:
 
 atexit.register(TeeLogger.close_all)
 
+# I don't know why, but seems to be needed
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 def parse_args():
     """Parse command line arguments."""
@@ -264,7 +266,7 @@ def validate(model, val_loader, device):
     model.eval()
     total_loss = 0
     num_batches = 0
-
+    
     with torch.no_grad():
         for batch in tqdm(val_loader, desc="Validation"):
             label_task1 = batch['label_task1'].to(device)
@@ -279,9 +281,16 @@ def validate(model, val_loader, device):
             total_loss += loss.item()
             num_batches += 1
 
+    # WARNING!!! Using functions from predict stage2
+    from inference import predict_stage2
+    predictions , _ , _ , _ = predict_stage2.generate_predictions(model, val_loader, device)
+    # Compute text generation metrics (BLEU, ROUGE, WER)
+    metrics = predict_stage2.compute_metrics(predictions)
+    retrieval_metrics_gen = predict_stage2.compute_retrieval_metrics(predictions, top_k = [1, 5, 10], device = device)
+
     avg_loss = total_loss / num_batches
     perplexity = math.exp(avg_loss)
-    return avg_loss, perplexity
+    return avg_loss, perplexity, metrics, retrieval_metrics_gen
 
 
 def generate_samples(model, val_loader, device, num_samples=3):
@@ -525,12 +534,26 @@ def main():
         writer.add_scalar('train/lr', current_lr, epoch)
 
         # Validate
-        val_loss, val_ppl = validate(model, val_loader, args.device)
+        val_loss, val_ppl, metrics, retrieval_metrics_gen = validate(model, val_loader, args.device)
         print(f"Val Loss: {val_loss:.4f} | Val Perplexity: {val_ppl:.2f}")
+        print(f"Top-1 Accuracy:   {retrieval_metrics_gen['retrieval_acc_top01']:.4f}")
+        print(f"Top-5 Accuracy:   {retrieval_metrics_gen['retrieval_acc_top05']:.4f}")
+        print(f"Top-10 Accuracy:  {retrieval_metrics_gen['retrieval_acc_top10']:.4f}")
 
         # Log validation metrics to TensorBoard
         writer.add_scalar('val/loss', val_loss, epoch)
         writer.add_scalar('val/perplexity', val_ppl, epoch)
+        writer.add_scalar('val/retrieval_acc_top01', retrieval_metrics_gen['retrieval_acc_top01'], epoch)
+        writer.add_scalar('val/retrieval_acc_top05', retrieval_metrics_gen['retrieval_acc_top05'], epoch)
+        writer.add_scalar('val/retrieval_acc_top10', retrieval_metrics_gen['retrieval_acc_top10'], epoch)
+        writer.add_scalar('val/bleu1', metrics['mean']['bleu1'], epoch)
+        writer.add_scalar('val/bleu2', metrics['mean']['bleu2'], epoch)
+        writer.add_scalar('val/bleu3', metrics['mean']['bleu3'], epoch)
+        writer.add_scalar('val/bleu4', metrics['mean']['bleu4'], epoch)
+        writer.add_scalar('val/rouge1_fmeasure', metrics['mean']['rouge1_fmeasure'], epoch)
+        writer.add_scalar('val/rouge1_precision', metrics['mean']['rouge1_precision'], epoch)
+        writer.add_scalar('val/rouge1_recall', metrics['mean']['rouge1_recall'], epoch)
+        writer.add_scalar('val/wer', metrics['mean']['wer'], epoch)
 
         # Generate sample predictions
         print("\nSample Predictions:")
@@ -556,12 +579,26 @@ def main():
     print("\n" + "=" * 80)
     print("Final evaluation on test set...")
     print("=" * 80)
-    test_loss, test_ppl = validate(model, test_loader, args.device)
+    test_loss, test_ppl, metrics, retrieval_metrics_gen = validate(model, test_loader, args.device)
     print(f"Test Loss: {test_loss:.4f} | Test Perplexity: {test_ppl:.2f}")
+    print(f"Top-1 Accuracy:   {retrieval_metrics_gen['retrieval_acc_top01']:.4f}")
+    print(f"Top-5 Accuracy:   {retrieval_metrics_gen['retrieval_acc_top05']:.4f}")
+    print(f"Top-10 Accuracy:  {retrieval_metrics_gen['retrieval_acc_top10']:.4f}")
 
     # Log test metrics to TensorBoard
     writer.add_scalar('test/loss', test_loss, args.max_epochs)
     writer.add_scalar('test/perplexity', test_ppl, args.max_epochs)
+    writer.add_scalar('test/retrieval_acc_top01', retrieval_metrics_gen['retrieval_acc_top01'], args.max_epochs)
+    writer.add_scalar('test/retrieval_acc_top05', retrieval_metrics_gen['retrieval_acc_top05'], args.max_epochs)
+    writer.add_scalar('test/retrieval_acc_top10', retrieval_metrics_gen['retrieval_acc_top10'], args.max_epochs)
+    writer.add_scalar('test/bleu1', metrics['mean']['bleu1'], args.max_epochs)
+    writer.add_scalar('test/bleu2', metrics['mean']['bleu2'], args.max_epochs)
+    writer.add_scalar('test/bleu3', metrics['mean']['bleu3'], args.max_epochs)
+    writer.add_scalar('test/bleu4', metrics['mean']['bleu4'], args.max_epochs)
+    writer.add_scalar('test/rouge1_fmeasure', metrics['mean']['rouge1_fmeasure'], args.max_epochs)
+    writer.add_scalar('test/rouge1_precision', metrics['mean']['rouge1_precision'], args.max_epochs)
+    writer.add_scalar('test/rouge1_recall', metrics['mean']['rouge1_recall'], args.max_epochs)
+    writer.add_scalar('test/wer', metrics['mean']['wer'], args.max_epochs)
 
     # Log hyperparameters with final metrics
     # Log hyperparameters with final metrics
