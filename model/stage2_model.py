@@ -22,7 +22,7 @@ class Stage2ReconstructionModel(nn.Module):
         """
         Args:
             model_name: Hugging Face model name
-            freeze_strategy: 'lora' or 'full_freeze_llm'
+            freeze_strategy: 'lora' or 'full_freeze_llm' or 'full_trainable_llm'
             lora_rank: LoRA rank
             label_embed_init: Optional pre-trained label embeddings
             device: Device to use
@@ -91,6 +91,11 @@ class Stage2ReconstructionModel(nn.Module):
             # Freeze everything in the model
             for param in self.model.parameters():
                 param.requires_grad = False
+
+        elif freeze_strategy == "full_trainable_llm":
+            # Train all parameters
+            for param in self.model.parameters():
+                param.requires_grad = True
 
         # Move to device
         self.to(self.device)

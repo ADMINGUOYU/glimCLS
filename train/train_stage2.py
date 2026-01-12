@@ -111,8 +111,8 @@ def parse_args():
         '--freeze_strategy',
         type=str,
         default='lora',
-        choices=['lora', 'full_freeze_llm'],
-        help='Freeze strategy: lora or full_freeze_llm'
+        choices=['lora', 'full_freeze_llm', 'full_trainable_llm'],
+        help='Freeze strategy: lora or full_freeze_llm or full_trainable_llm'
     )
     parser.add_argument(
         '--lora_rank',

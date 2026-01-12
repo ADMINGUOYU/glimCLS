@@ -16,7 +16,7 @@
 
 # Data
 # Set DATA_PATH to use real dataset, leave empty ("") for mock data
-DATA_PATH=""  # e.g., "./data/zuco_preprocessed_dataframe/stage2.df"
+DATA_PATH="./data/zuco_preprocessed_dataframe/zuco2best.df"  # e.g., "./data/zuco_preprocessed_dataframe/stage2.df"
 DATA_SIZE=3000  # Only used when DATA_PATH is empty (mock data)
 BATCH_SIZE=72
 NUM_WORKERS=4
@@ -28,7 +28,7 @@ TOPIC_LABELS=("Biographies and Factual Knowledge" "Movie Reviews and Sentiment")
 
 # Model Architecture
 TEXT_MODEL="google/flan-t5-large"
-FREEZE_STRATEGY="full_freeze_llm"  # Options: "lora" or "full_freeze_llm"
+FREEZE_STRATEGY="full_trainable_llm"  # Options: "lora" or "full_freeze_llm" or "full_trainable_llm"
 LORA_RANK=8
 
 # Label Embedding Initialization (Optional)
@@ -37,17 +37,17 @@ LORA_RANK=8
 LABEL_EMBED_INIT=""
 
 # Training
-MAX_EPOCHS=10
-LR=1e-4
+MAX_EPOCHS=50
+LR=2e-4
 MIN_LR=1e-6
-WARMUP_EPOCHS=0
+WARMUP_EPOCHS=15
 WEIGHT_DECAY=0.01
 
 # Hardware
 DEVICE="cuda:0"
 
 # Logging
-LOG_DIR="./logs"
+LOG_DIR="./logs/stage2"
 EXPERIMENT_NAME="stage2"
 
 # ============================================================================

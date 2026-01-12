@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Zuco12 single gpu with loss scaling +channel weight
+# Zuco1+2 single gpu without mse , len loss weight 0.9 +channel weights
 
 
 # Training script for GLIM_PARALLEL model
@@ -17,12 +17,13 @@
 # CONFIGURATION PARAMETERS
 # ============================================================================
 #some important changes made here
-USE_ZUCO1_ONLY=false
-USE_CHANNEL_WEIGHTS=true
+USE_ZUCO1_ONLY=true
+USE_CHANNEL_WEIGHTS=false
 
 USE_SCALED_LR=true          # Scale LR by number of GPUs in multi-GPU training
-USE_PER_GPU_BATCH_SIZE=true # Treat BATCH_SIZE as per-GPU (global = BATCH_SIZE × num_gpus)
+USE_PER_GPU_BATCH_SIZE=false # Treat BATCH_SIZE as per-GPU (global = BATCH_SIZE × num_gpus)
 USE_CLASS_WEIGHTS=true     # Enable per-class loss weighting based on inverse frequency
+
 
 
 # Data
@@ -57,7 +58,7 @@ COMMITMENT_LOSS_WEIGHT=0.7
 # COMMITMENT_LOSS_WEIGHT=1000
 SENTIMENT_LOSS_WEIGHT=0.3
 TOPIC_LOSS_WEIGHT=0.3
-LENGTH_LOSS_WEIGHT=0.3
+LENGTH_LOSS_WEIGHT=0.9
 SURPRISAL_LOSS_WEIGHT=0.3
 
 # Training
@@ -65,7 +66,8 @@ SURPRISAL_LOSS_WEIGHT=0.3
 # Example: 32 per GPU × 8 GPUs = 256 global batch size
 BATCH_SIZE=72
 VAL_BATCH_SIZE=24
-MAX_EPOCHS=50
+
+MAX_EPOCHS=200
 
 
 # Base learning rate for single GPU
@@ -79,18 +81,18 @@ SEED=42
 
 
 # Hardware multi-GPU settings
-# ACCELERATOR="gpu"
-# STRATEGY="ddp"
-# DEVICE=(0 1 2 3 4 5 6 7)  # 8 GPUs
-# PRECISION="bf16-mixed"
-# NUM_WORKERS=4
-
-# Hardware single-GPU settings
 ACCELERATOR="gpu"
-STRATEGY="auto"       
-DEVICE=(0)            
+STRATEGY="ddp"
+DEVICE=(0 1 2 3 4 5 6 7)  # 8 GPUs
 PRECISION="bf16-mixed"
 NUM_WORKERS=4
+
+# Hardware single-GPU settings
+# ACCELERATOR="gpu"
+# STRATEGY="auto"       
+# DEVICE=(0)            
+# PRECISION="bf16-mixed"
+# NUM_WORKERS=4
 
 
 

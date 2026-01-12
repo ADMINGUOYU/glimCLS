@@ -530,7 +530,8 @@ def main():
     # Apply square root LR scaling for multi-GPU if enabled
     if args.use_scaled_lr and is_ddp and num_devices > 1:
         base_lr = args.lr
-        scaled_lr = base_lr * (num_devices ** 0.5)
+        # sclae == 1
+        scaled_lr = base_lr
         args.lr = scaled_lr
         if is_main_process():
             print(f"\n{'='*80}")

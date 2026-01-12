@@ -550,6 +550,7 @@ def main():
         'sentiment label': df_split['sentiment label'].tolist() if 'sentiment label' in df_split.columns else [None] * len(df_split),
         'topic_label': df_split['topic_label'].tolist() if 'topic_label' in df_split.columns else [None] * len(df_split),
         'length': df_split['length'].tolist() if 'length' in df_split.columns else [None] * len(df_split),
+        # 'length': df_split['length'].tolist(),
         'surprisal': df_split['surprisal'].tolist() if 'surprisal' in df_split.columns else [None] * len(df_split),
     })
     

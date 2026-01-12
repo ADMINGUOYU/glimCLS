@@ -13,20 +13,20 @@ USE_SINGLE_CHECKPOINT=true
 # Set USE_ZUCO1_ONLY=true to use only ZuCo1 dataset
 # and drop all ZuCo2 samples
 # ============================================================
-USE_ZUCO1_ONLY=true
+USE_ZUCO1_ONLY=false
 
 # Set paths to your checkpoints
-CKPT="/mnt/afs/250010218/glimCLS/logs/glim_parallel_20260109_071609/checkpoints/model-epoch45-acc_sentiment0.8209.ckpt"
+CKPT="/mnt/afs/250010218/glimCLS/logs/glim_parallel_20260110_175544/checkpoints/model-epoch43-acc_topic0.9072.ckpt"
 SENTIMENT_CKPT="./logs/...ckpt"
-TOPIC_CKPT="./logs/...ckpt"
+TOPIC_CKPT="./logs/...ckpt" 
 LENGTH_CKPT="./logs/...ckpt"
 SURPRISAL_CKPT="./logs/...ckpt"
 
 # Set data path
-DATA_PATH="./data/zuco_preprocessed_dataframe/zuco_merged_with_variants.df"
+DATA_PATH="data/ZUCO1-2_FOR_GLIMCLS/zuco_merged_with_variants.df"
 
 # Set output path
-OUTPUT_PATH="./data/zuco_preprocessed_dataframe/222.df"
+OUTPUT_PATH="./data/zuco_preprocessed_dataframe/zuco2best.df"
 
 # Create output directory if it doesn't exist
 mkdir -p $(dirname $OUTPUT_PATH)
@@ -38,10 +38,11 @@ BATCH_SIZE=72
 DEVICE=0
 
 # Set split
-SPLIT="val" # run predict on all 'train', 'test' and 'val' splits
+SPLIT="all" # run predict on 'all', 'train', 'test' and 'val' splits
 
 # Build the zuco1 only flag
 ZUCO1_FLAG=""
+
 if [ "$USE_ZUCO1_ONLY" = true ]; then
     ZUCO1_FLAG="--use_zuco1_only"
     echo "Note: Using ZuCo1 dataset only (ZuCo2 samples will be dropped)"
