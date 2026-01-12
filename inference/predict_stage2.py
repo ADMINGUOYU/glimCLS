@@ -838,7 +838,7 @@ def compute_retrieval_metrics(
         # Log that to the return dict
         results_to_return[key] = accumulative
     
-    return results
+    return results_to_return
 
 
 def save_predictions(
