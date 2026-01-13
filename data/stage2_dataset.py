@@ -1,5 +1,6 @@
 import torch
 import pandas as pd
+import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from typing import Dict, Tuple, List, Optional
 
@@ -18,6 +19,10 @@ VARIANT_KEYS = \
     'syntax simplification (v0)', 'syntax simplification (v1)',
     'naive rewritten', 'naive simplified']
 
+# Use noise for ei and Zi outputs
+USE_NOISE_EVAL = False
+USE_NOISE_TEST = False
+
 class Stage2ReconstructionDataset(Dataset):
     """
     Dataset for Stage 2 text reconstruction training.
@@ -30,7 +35,8 @@ class Stage2ReconstructionDataset(Dataset):
         self,
         df: pd.DataFrame,
         sentiment_labels: Optional[List[str]] = None,
-        topic_labels: Optional[List[str]] = None
+        topic_labels: Optional[List[str]] = None,
+        use_noise: bool = False
     ):
         """
         Args: 
@@ -44,6 +50,7 @@ class Stage2ReconstructionDataset(Dataset):
                 - 'pred_surprisal' or 'surprisal': surprisal of the sentence
             sentiment_labels: List of sentiment label names for mapping to indices
             topic_labels: List of topic label names for mapping to indices
+            use_noise: Whether to yield noise for ei and Zi (set dataframe ei and Zi)
         """
         self.df = df.reset_index(drop=True)
         
@@ -61,9 +68,23 @@ class Stage2ReconstructionDataset(Dataset):
         self.length_col = 'pred_length' if 'pred_length' in df.columns else 'length'
         self.surprisal_col = 'pred_surprisal' if 'pred_surprisal' in df.columns else 'surprisal'
         
+        # Apply noise
+        if use_noise:
+            n = len(df)
+            # Ensure dimensions are retrieved correctly
+            ei_c = df['ei'].iloc[0].shape[0]
+            Zi_l, Zi_c = df['Zi'].iloc[0].shape
+
+            rng = np.random.default_rng(seed = 42)
+
+            # WRAP IN list() to assign as a Series of 2D arrays
+            df['ei'] = list(rng.standard_normal((n, ei_c), dtype=np.float32))
+            df['Zi'] = list(rng.standard_normal((n, Zi_l, Zi_c), dtype=np.float32))
+
         # Extract data
         self.ei = df['ei'].tolist()
         self.Zi = df['Zi'].tolist()
+
         self.sentiment_labels_raw = df[self.sentiment_col].tolist()
         self.topic_labels_raw = df[self.topic_col].tolist()
         self.target_texts = df['input text'].tolist()
@@ -258,8 +279,8 @@ def create_stage2_dataloaders(
     
     # Create datasets
     train_dataset = Stage2ReconstructionDataset(df_train, sentiment_labels, topic_labels)
-    val_dataset = Stage2ReconstructionDataset(df_val, sentiment_labels, topic_labels)
-    test_dataset = Stage2ReconstructionDataset(df_test, sentiment_labels, topic_labels)
+    val_dataset = Stage2ReconstructionDataset(df_val, sentiment_labels, topic_labels, use_noise = USE_NOISE_EVAL)
+    test_dataset = Stage2ReconstructionDataset(df_test, sentiment_labels, topic_labels, use_noise = USE_NOISE_TEST)
     
     # Create dataloaders
     train_loader = DataLoader(

@@ -14,6 +14,8 @@ VARIANT_KEYS = \
     'syntax simplification (v0)', 'syntax simplification (v1)',
     'naive rewritten', 'naive simplified']
 
+USE_NOISE = False
+
 import os
 import sys
 import argparse
@@ -240,7 +242,8 @@ def create_dataloader(
     dataset = Stage2ReconstructionDataset(
         df=df_split,
         sentiment_labels=sentiment_labels,
-        topic_labels=topic_labels
+        topic_labels=topic_labels,
+        use_noise = USE_NOISE
     )
     
     # Create dataloader
