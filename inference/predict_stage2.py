@@ -581,7 +581,7 @@ def compute_metrics(predictions: List[Dict]) -> Dict:
 def compute_retrieval_metrics(
     predictions: List[Dict],
     top_k: List[int] = [1, 5, 10],
-    rand_grp: int = 5,
+    rand_grp: int = 50,
     rand_btsz:int = 24,
     device: str = "cpu"
 ) -> Dict:
@@ -666,8 +666,8 @@ def compute_retrieval_metrics(
         selected_pred_emb[0] = selected_target_emb[0]
 
         # 1. Normalize for cosine similarity
-        pred_emb = torch.nn.functional.normalize(selected_pred_emb, p=2, dim=1)
-        target_emb = torch.nn.functional.normalize(selected_target_emb, p=2, dim=1)
+        selected_pred_emb = torch.nn.functional.normalize(selected_pred_emb, p=2, dim=1)
+        selected_target_emb = torch.nn.functional.normalize(selected_target_emb, p=2, dim=1)
 
         # 2. Calculate Similarity Matrix (N x M)
         scores = torch.mm(selected_pred_emb, selected_target_emb.transpose(0, 1))
