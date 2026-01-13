@@ -185,6 +185,12 @@ def parse_args():
         help='Dropout rate for encoder'
     )
     parser.add_argument(
+        '--hidden_eeg_len',
+        type=int,
+        default=DEFAULT_HIDDEN_EEG_LEN,
+        help='Output sequence length for EEG encoder (number of learnable queries)'
+    )
+    parser.add_argument(
         '--do_not_use_prompt',
         action='store_true',
         help='Whether or not to use prompt embeddings'
@@ -669,7 +675,7 @@ def main():
             print("Creating new GLIM_PARALLEL model...")
         model = GLIM_PARALLEL(
             input_eeg_len=DEFAULT_INPUT_EEG_LEN,
-            hidden_eeg_len=DEFAULT_HIDDEN_EEG_LEN,
+            hidden_eeg_len=args.hidden_eeg_len,
             input_text_len=DEFAULT_INPUT_TEXT_LEN,
             input_dim=DEFAULT_INPUT_DIM,
             hidden_dim=args.hidden_dim,

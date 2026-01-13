@@ -160,6 +160,11 @@ class EEGEncoder(nn.Module):
         self.out_blocks = nn.ModuleList([DecoderBlock(out_dim, is_causal=out_is_causal, **block_kwargs)
                                             for _ in range(n_out_blocks)])
         self.norm2 = nn.LayerNorm(out_dim, eps=1e-6, elementwise_affine=True)
+        ### DEBUG
+        # print(self.shared_queries.shape)
+        # print(out_len)
+        # print(task_embed_len)
+        # exit()
 
         pos_embed = get_1d_sincos_pos_embed_from_grid(in_dim, np.arange(in_len))
         self.pos_embed = nn.Parameter(torch.from_numpy(pos_embed).float().unsqueeze(0), requires_grad=False)
@@ -186,9 +191,12 @@ class EEGEncoder(nn.Module):
         x = x + self.pos_embed                                        # (n, t, c) 
         for i, in_block in enumerate(self.in_blocks):
             x = in_block(x, mask, p)                                    # (n, t, c)
-
+        
         x = self.norm1(self.x_proj(x))                                  # (n, t, d)
         q = self.shared_queries.expand(bsz, -1, -1)                     # (n, l, d)         
+
+        # print(x.shape)
+        # exit()
 
         attn_weights = {}
         for j, out_block in enumerate(self.out_blocks):

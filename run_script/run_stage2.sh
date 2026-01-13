@@ -13,6 +13,7 @@
 # Set Hugging Face cache directory
 export HF_HOME="/mnt/afs/250010218/hf_cache"
 export TRANSFORMERS_CACHE="/mnt/afs/250010218/hf_cache"
+export HF_ENDPOINT="https://hf-mirror.com"
 
 # Create cache directory if it doesn't exist
 mkdir -p "$HF_HOME"
@@ -34,7 +35,7 @@ TOPIC_LABELS=("Biographies and Factual Knowledge" "Movie Reviews and Sentiment")
 
 # Model Architecture
 TEXT_MODEL="google/flan-t5-large"
-FREEZE_STRATEGY="full_trainable_llm"  # Options: "lora" or "full_freeze_llm" or "full_trainable_llm"
+FREEZE_STRATEGY="full_freeze_llm"  # Options: "lora" or "full_freeze_llm" or "full_trainable_llm"
 LORA_RANK=8
 
 # Attention Mask Strategy
@@ -47,7 +48,7 @@ USE_EI=true  # Set to false to disable global EEG feature
 USE_PROJECTOR=true  # Set to false to disable trainable projection layer
 
 # Use metadata (prompts: dataset, task, subject)
-USE_METADATA=false
+USE_METADATA=true
 
 # Label Embedding Initialization (Optional)
 # Leave empty ("") to use random initialization
@@ -55,18 +56,18 @@ USE_METADATA=false
 LABEL_EMBED_INIT=""
 
 # Training
-MAX_EPOCHS=30
+MAX_EPOCHS=15
 LR=2e-4
 MIN_LR=1e-6
-WARMUP_EPOCHS=5
+WARMUP_EPOCHS=3
 WEIGHT_DECAY=0.01
 
 # Hardware
 DEVICE="cuda:0"
 
 # Logging
-LOG_DIR="./logs/stage2"
-EXPERIMENT_NAME="stage2"
+LOG_DIR="./logs/stage2_prompt"
+EXPERIMENT_NAME="YU_EI_MTV_fullfreeze_check"
 
 # ============================================================================
 

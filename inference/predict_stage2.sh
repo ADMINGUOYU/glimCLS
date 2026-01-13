@@ -2,21 +2,26 @@
 
 # Inference script for Stage 2 text reconstruction model
 
+# Set Hugging Face cache directory
+export HF_HOME="/mnt/afs/250010218/hf_cache"
+export TRANSFORMERS_CACHE="/mnt/afs/250010218/hf_cache"
+export HF_ENDPOINT="https://hf-mirror.com"
+
 # ============================================================================
 # CONFIGURATION PARAMETERS
 # ============================================================================
 
 # Data path - output from Stage 1 inference (predict_glim_parallel_and_pack.py)
-DATA_PATH="./data/zuco_preprocessed_dataframe/stage2.df"
+DATA_PATH="./data/zuco_preprocessed_dataframe/zuco2best.df"
 
 # Model checkpoint - trained Stage 2 model
-CHECKPOINT="./logs/...."
+CHECKPOINT="/mnt/afs/250010218/glimCLS/logs/glim_parallel_20260109_071609/checkpoints/model-epoch29-loss_surprisal0.6195.ckpt"
 
 # Use metadata (prompts: dataset, task, subject)
 USE_METADATA=false
 
 # Output path
-OUTPUT_DIR="..."
+OUTPUT_DIR=".."
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 OUTPUT_PATH="${OUTPUT_DIR}/predictions_stage2_${TIMESTAMP}.csv"
 

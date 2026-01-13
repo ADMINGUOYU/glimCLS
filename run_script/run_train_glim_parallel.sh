@@ -44,6 +44,7 @@ MODEL_CACHE_DIR="/mnt/afs/250010218/hf_cache"
 
 HIDDEN_DIM=128
 EMBED_DIM=1024
+HIDDEN_EEG_LEN=96
 N_IN_BLOCKS=6
 N_OUT_BLOCKS=6
 NUM_HEADS=8
@@ -118,6 +119,7 @@ python -m train.train_glim_parallel \
     --text_model "$TEXT_MODEL" \
     --hidden_dim $HIDDEN_DIM \
     --embed_dim $EMBED_DIM \
+    --hidden_eeg_len $HIDDEN_EEG_LEN \
     --n_in_blocks $N_IN_BLOCKS \
     --n_out_blocks $N_OUT_BLOCKS \
     --num_heads $NUM_HEADS \
