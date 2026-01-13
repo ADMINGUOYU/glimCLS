@@ -9,6 +9,14 @@ from typing import Dict, Tuple, List, Optional
 SENTIMENT_LABELS = ['non_neutral', 'neutral']
 TOPIC_LABELS = ['Biographies and Factual Knowledge', 'Movie Reviews and Sentiment']
 
+# These files are required to use MTV in stage 2
+# Set PATH_TO_VARIANTS to None to skip
+PATH_TO_VARIANTS = None
+VARIANT_KEYS = \
+    ['lexical simplification (v0)', 'lexical simplification (v1)',
+    'semantic clarity (v0)', 'semantic clarity (v1)',
+    'syntax simplification (v0)', 'syntax simplification (v1)',
+    'naive rewritten', 'naive simplified']
 
 class Stage2ReconstructionDataset(Dataset):
     """
@@ -208,13 +216,45 @@ def create_stage2_dataloaders(
         df_test = df.loc[test_indices]
     else:
         # Use existing phase column
-        df_train = df[df['phase'] == 'train']
-        df_val = df[df['phase'] == 'val']
-        df_test = df[df['phase'] == 'test']
+        df_train: pd.DataFrame = df[df['phase'] == 'train']
+        df_val: pd.DataFrame = df[df['phase'] == 'val']
+        df_test: pd.DataFrame = df[df['phase'] == 'test']
     
     print(f"Train samples: {len(df_train)}")
     print(f"Val samples: {len(df_val)}")
     print(f"Test samples: {len(df_test)}")
+
+    if PATH_TO_VARIANTS is not None:
+        # 1. Load MTV
+        mtv = pd.read_pickle(PATH_TO_VARIANTS)
+
+        # FIX: Keep only the first occurrence of each 'input text' to prevent row explosion
+        mtv = mtv.drop_duplicates(subset=['input text'], keep='first')
+        
+        # 2. Vectorized Join: Connect df_train to mtv on 'input text'
+        merged_df = df_train.merge(
+            mtv[['input text'] + VARIANT_KEYS], 
+            on='input text', 
+            how='left'
+        )
+        assert len(df_train) == len(merged_df), f"{len(df_train)}, {len(merged_df)}"
+        # 3. Assert Check (Vectorized)
+        if merged_df[VARIANT_KEYS[0]].isna().any():
+            missing = merged_df[merged_df[VARIANT_KEYS[0]].isna()]['input text'].unique()
+            raise AssertionError(f"[ERROR] Input texts {missing[:5]} not found in MTV")
+    
+        # 4. Unpivot: Create a row for each variant key
+        # 'id_vars' are columns you want to keep (everything except the variants)
+        id_cols = [c for c in merged_df.columns if c not in VARIANT_KEYS]
+        
+        df_train = merged_df.melt(
+            id_vars=id_cols, 
+            value_vars=VARIANT_KEYS,
+            value_name='input text_new' # Temporarily name it differently
+        ).drop(columns=['input text', 'variable']) # Remove old text and 'melt' key
+        
+        # Rename back to original
+        df_train = df_train.rename(columns={'input text_new': 'input text'})
     
     # Create datasets
     train_dataset = Stage2ReconstructionDataset(df_train, sentiment_labels, topic_labels)
