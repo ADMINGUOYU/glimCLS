@@ -12,6 +12,9 @@ DATA_PATH="./data/zuco_preprocessed_dataframe/stage2.df"
 # Model checkpoint - trained Stage 2 model
 CHECKPOINT="./logs/...."
 
+# Use metadata (prompts: dataset, task, subject)
+USE_METADATA=false
+
 # Output path
 OUTPUT_DIR="..."
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -47,6 +50,7 @@ echo "=========================================="
 echo "Stage 2 Inference Configuration:"
 echo "  Data Path: $DATA_PATH"
 echo "  Checkpoint: $CHECKPOINT"
+echo "  Use Metadata: $USE_METADATA"
 echo "  Output Path: $OUTPUT_PATH"
 echo "  Text Model: $TEXT_MODEL"
 echo "  Freeze Strategy: $FREEZE_STRATEGY"
@@ -71,6 +75,11 @@ CMD="python -m inference.predict_stage2 \
     --split \"$SPLIT\""
 CMD+=(--sentiment_labels "${SENTIMENT_LABELS[@]}")
 CMD+=(--topic_labels "${TOPIC_LABELS[@]}")
+
+# Add use_metadata flag
+if [ "$USE_METADATA" = true ]; then
+    CMD="$CMD --use_metadata"
+fi
 
 # Run inference
 echo "Running inference..."

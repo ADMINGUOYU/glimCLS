@@ -48,6 +48,9 @@ class Stage2ReconstructionDataset(Dataset):
                 - 'input text': target text for reconstruction
                 - 'pred_length' or 'length': length of the sentence
                 - 'pred_surprisal' or 'surprisal': surprisal of the sentence
+                - 'task': ZuCo task ID
+                - 'dataset': ZuCo dataset version
+                - 'subject': ZuCo subject
             sentiment_labels: List of sentiment label names for mapping to indices
             topic_labels: List of topic label names for mapping to indices
             use_noise: Whether to yield noise for ei and Zi (set dataframe ei and Zi)
@@ -90,6 +93,9 @@ class Stage2ReconstructionDataset(Dataset):
         self.target_texts = df['input text'].tolist()
         self.length = df[self.length_col].tolist()
         self.surprisal = df[self.surprisal_col].tolist()
+        self.tasks = df['task'].tolist() if 'task' in df.columns else ['unknown'] * len(df)
+        self.datasets = df['dataset'].tolist() if 'dataset' in df.columns else ['unknown'] * len(df)
+        self.subjects = df['subject'].tolist() if 'subject' in df.columns else ['unknown'] * len(df)
         
         print(f"Stage2Dataset initialized with {len(self.df)} samples")
         print(f"  Using sentiment column: {self.sentiment_col}")
@@ -166,7 +172,12 @@ class Stage2ReconstructionDataset(Dataset):
             'surprisal': surprisal,
             'ei': ei,
             'Zi': Zi,
-            'target_text': target_text
+            'target_text': target_text,
+            'prompt_dict': {
+                'task': self.tasks[idx],
+                'dataset': self.datasets[idx],
+                'subject': self.subjects[idx]
+            }
         }
 
 
@@ -187,7 +198,8 @@ def stage2_collate_fn(batch: List[Dict]) -> Dict:
         'surprisal': torch.tensor([item['surprisal'] for item in batch], dtype=torch.float),
         'ei': torch.stack([item['ei'] for item in batch]),
         'Zi': torch.stack([item['Zi'] for item in batch]),
-        'target_text': [item['target_text'] for item in batch]
+        'target_text': [item['target_text'] for item in batch],
+        'prompt_dicts': [item['prompt_dict'] for item in batch]
     }
 
 

@@ -46,6 +46,9 @@ USE_EI=true  # Set to false to disable global EEG feature
 # Projection Layer
 USE_PROJECTOR=true  # Set to false to disable trainable projection layer
 
+# Use metadata (prompts: dataset, task, subject)
+USE_METADATA=false
+
 # Label Embedding Initialization (Optional)
 # Leave empty ("") to use random initialization
 # Provide path to checkpoint containing pre-trained label embeddings
@@ -75,6 +78,7 @@ echo "  LoRA Rank: $LORA_RANK"
 echo "  Attention Mask Type: $ATTENTION_MASK_TYPE"
 echo "  Use Global EEG (ei): $USE_EI"
 echo "  Use Projection Layer: $USE_PROJECTOR"
+echo "  Use Metadata: $USE_METADATA"
 if [ -n "$DATA_PATH" ]; then
     echo "  Data Path: $DATA_PATH"
     echo -n "  Sentiment Labels: "
@@ -129,6 +133,11 @@ if [ "$USE_PROJECTOR" = true ]; then
     CMD="$CMD --use_projector"
 else
     CMD="$CMD --no_projector"
+fi
+
+# Add use_metadata flag
+if [ "$USE_METADATA" = true ]; then
+    CMD="$CMD --use_metadata"
 fi
 
 # Add data path or data size

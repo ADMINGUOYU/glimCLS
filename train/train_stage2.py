@@ -159,6 +159,12 @@ def parse_args():
         dest='use_projector',
         help='Do not use projection layer'
     )
+    # Use prompts 'dataset', 'task', 'subject'
+    parser.add_argument(
+        '--use_metadata',
+        action='store_true',
+        help='Include dataset/task/subject metadata in prompts'
+    )
 
     # Training arguments
     parser.add_argument(
@@ -223,7 +229,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def train_epoch(model, train_loader, optimizer, scheduler, device, epoch):
+def train_epoch(model, train_loader, optimizer, scheduler, device, epoch, use_metadata=False):
     """Train for one epoch."""
     model.train()
     total_loss = 0
@@ -239,9 +245,19 @@ def train_epoch(model, train_loader, optimizer, scheduler, device, epoch):
         target_text = batch['target_text']
         length = batch['length'].to(device)
         surprisal = batch['surprisal'].to(device)
+        prompt_dicts = batch.get('prompt_dicts', None) if use_metadata else None
 
         # Forward pass
-        loss = model(label_task1, label_task2, length, surprisal, ei, Zi, target_text)
+        loss = model(
+            label_task1, 
+            label_task2, 
+            length, 
+            surprisal, 
+            ei, 
+            Zi, 
+            target_text,
+            prompt_dicts=prompt_dicts
+        )
 
         # Backward pass
         optimizer.zero_grad()
@@ -261,7 +277,7 @@ def train_epoch(model, train_loader, optimizer, scheduler, device, epoch):
     return avg_loss, perplexity
 
 
-def validate(model, val_loader, device):
+def validate(model, val_loader, device, use_metadata=False):
     """Validate the model."""
     model.eval()
     total_loss = 0
@@ -276,8 +292,18 @@ def validate(model, val_loader, device):
             target_text = batch['target_text']
             length = batch['length'].to(device)
             surprisal = batch['surprisal'].to(device)
+            prompt_dicts = batch.get('prompt_dicts', None) if use_metadata else None
 
-            loss = model(label_task1, label_task2, length, surprisal, ei, Zi, target_text)
+            loss = model(
+                label_task1, 
+                label_task2, 
+                length, 
+                surprisal, 
+                ei, 
+                Zi, 
+                target_text,
+                prompt_dicts=prompt_dicts
+            )
             total_loss += loss.item()
             num_batches += 1
 
@@ -293,7 +319,7 @@ def validate(model, val_loader, device):
     return avg_loss, perplexity, metrics, retrieval_metrics_gen
 
 
-def generate_samples(model, val_loader, device, num_samples=3):
+def generate_samples(model, val_loader, device, num_samples=3, use_metadata=False):
     """Generate sample predictions."""
     model.eval()
     samples = []
@@ -307,9 +333,18 @@ def generate_samples(model, val_loader, device, num_samples=3):
             target_text = batch['target_text']
             length = batch['length'].to(device)
             surprisal = batch['surprisal'].to(device)
+            prompt_dicts = batch.get('prompt_dicts', None) if use_metadata else None
 
             # Generate predictions
-            predictions = model.generate(label_task1, label_task2, length, surprisal, ei, Zi)
+            predictions = model.generate(
+                label_task1, 
+                label_task2, 
+                length, 
+                surprisal, 
+                ei, 
+                Zi,
+                prompt_dicts=prompt_dicts
+            )
 
             # Collect samples
             for i in range(len(predictions)):
@@ -410,6 +445,7 @@ def main():
     print(f"Attention mask type: {args.attention_mask_type}")
     print(f"Use global EEG (ei): {args.use_ei}")
     print(f"Use projection layer: {args.use_projector}")
+    print(f"Using metadata in prompts: {args.use_metadata}")
     print(f"Max epochs: {args.max_epochs}")
     print(f"Learning rate: {args.lr} (max), {args.min_lr} (min)")
     print(f"Warmup epochs: {args.warmup_epochs}")
@@ -524,7 +560,10 @@ def main():
         print("-" * 80)
 
         # Train
-        train_loss, train_ppl = train_epoch(model, train_loader, optimizer, scheduler, args.device, epoch)
+        train_loss, train_ppl = train_epoch(
+            model, train_loader, optimizer, scheduler, 
+            args.device, epoch, use_metadata=args.use_metadata
+        )
         current_lr = optimizer.param_groups[0]['lr']
         print(f"Train Loss: {train_loss:.4f} | Train Perplexity: {train_ppl:.2f} | LR: {current_lr:.2e}")
 
@@ -534,7 +573,9 @@ def main():
         writer.add_scalar('train/lr', current_lr, epoch)
 
         # Validate
-        val_loss, val_ppl, metrics, retrieval_metrics_gen = validate(model, val_loader, args.device)
+        val_loss, val_ppl, metrics, retrieval_metrics_gen = validate(
+            model, val_loader, args.device, use_metadata=args.use_metadata
+        )
         print(f"Val Loss: {val_loss:.4f} | Val Perplexity: {val_ppl:.2f}")
         print(f"Top-1 Accuracy:   {retrieval_metrics_gen['retrieval_acc_top01']:.4f}")
         print(f"Top-5 Accuracy:   {retrieval_metrics_gen['retrieval_acc_top05']:.4f}")
@@ -557,7 +598,10 @@ def main():
 
         # Generate sample predictions
         print("\nSample Predictions:")
-        samples = generate_samples(model, val_loader, args.device, num_samples=3)
+        samples = generate_samples(
+            model, val_loader, args.device, 
+            num_samples=3, use_metadata=args.use_metadata
+        )
         for i, sample in enumerate(samples, 1):
             print(f"\nSample {i}:")
             print(f"  Target:     {sample['target']}")
@@ -579,7 +623,9 @@ def main():
     print("\n" + "=" * 80)
     print("Final evaluation on test set...")
     print("=" * 80)
-    test_loss, test_ppl, metrics, retrieval_metrics_gen = validate(model, test_loader, args.device)
+    test_loss, test_ppl, metrics, retrieval_metrics_gen = validate(
+        model, test_loader, args.device, use_metadata=args.use_metadata
+    )
     print(f"Test Loss: {test_loss:.4f} | Test Perplexity: {test_ppl:.2f}")
     print(f"Top-1 Accuracy:   {retrieval_metrics_gen['retrieval_acc_top01']:.4f}")
     print(f"Top-5 Accuracy:   {retrieval_metrics_gen['retrieval_acc_top05']:.4f}")

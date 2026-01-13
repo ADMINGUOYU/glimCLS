@@ -57,6 +57,13 @@ def parse_args():
         required=True,
         help="Path to the trained Stage 2 model checkpoint (.pt/.ckpt file)"
     )
+
+    # Use prompts 'dataset', 'task', 'subject'
+    parser.add_argument(
+        '--use_metadata',
+        action='store_true',
+        help='Include dataset/task/subject metadata in prompts'
+    )
     
     # Output arguments
     parser.add_argument(
@@ -267,7 +274,8 @@ def collate_fn(batch: List[Dict]) -> Dict:
         'surprisal': torch.tensor([item['surprisal'] for item in batch], dtype=torch.float),
         'ei': torch.stack([item['ei'] for item in batch]),
         'Zi': torch.stack([item['Zi'] for item in batch]),
-        'target_text': [item['target_text'] for item in batch]
+        'target_text': [item['target_text'] for item in batch],
+        'prompt_dicts': [item['prompt_dict'] for item in batch]
     }
 
 
@@ -348,7 +356,8 @@ def generate_predictions(
     device: str,
     max_length: int = 50,
     verbose: bool = False,
-    num_samples_to_print: int = 5
+    num_samples_to_print: int = 5,
+    use_metadata = False
 ) -> Tuple[List[Dict], torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Generate text predictions using the model and collect embeddings.
@@ -360,6 +369,7 @@ def generate_predictions(
         max_length: Maximum generation length
         verbose: Print sample predictions
         num_samples_to_print: Number of samples to print
+        use_metadata: Whether to use metadata (dataset, task, subject)
         
     Returns: 
         Tuple of: 
@@ -384,12 +394,13 @@ def generate_predictions(
             target_texts = batch["target_text"]
             length = batch['length'].to(device)
             surprisal = batch['surprisal'].to(device)
+            prompt_dicts = batch.get('prompt_dicts', None) if use_metadata else None
             
             # Collect EEG embeddings (ei is the global EEG embedding vector)
             all_eeg_embeddings.append(ei.cpu())
             
             # Generate predictions
-            predictions = model.generate(label_task1, label_task2, length, surprisal, ei, Zi, max_length)
+            predictions = model.generate(label_task1, label_task2, length, surprisal, ei, Zi, max_length, prompt_dicts=prompt_dicts)
 
             # !!!!! WARNING: This is an update
             # Locate generated portion AFTER 'Target: '
@@ -768,6 +779,7 @@ def main():
     print("=" * 60)
     print(f"Data path: {args.data_path}")
     print(f"Checkpoint: {args.checkpoint}")
+    print(f"Use metadata: {args.use_metadata}")
     print(f"Split: {args.split}")
     print(f"Batch size: {args.batch_size}")
     print(f"Max length: {args.max_length}")
@@ -806,7 +818,8 @@ def main():
         device=device,
         max_length=args.max_length,
         verbose=args.verbose,
-        num_samples_to_print=args.num_samples_to_print
+        num_samples_to_print=args.num_samples_to_print,
+        use_metadata=args.use_metadata
     )
     
     print(f"\nGenerated {len(predictions)} predictions")

@@ -3,7 +3,7 @@ import torch.nn as nn
 from transformers import T5ForConditionalGeneration, T5Tokenizer
 from transformers.modeling_outputs import BaseModelOutput
 from peft import LoraConfig, get_peft_model
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 
 class Stage2ReconstructionModel(nn.Module):
@@ -125,20 +125,35 @@ class Stage2ReconstructionModel(nn.Module):
         # Move to device
         self.to(self.device)
 
-    def build_prompt(self, sentiment_idx: int, topic_idx: int, length: float, surprisal: float) -> str:
-        """Build prompt template with label text and EEG metadata."""
+    def build_prompt(
+        self, 
+        sentiment_idx: int, 
+        topic_idx: int, 
+        length: float, 
+        surprisal: float,
+        prompt_dict: Optional[Dict] = None
+    ) -> str:
+        """Build prompt template with optional metadata."""
         sentiment_text = self.sentiment_labels[sentiment_idx]
         topic_text = self.topic_labels[topic_idx]
 
-        eeg_seq_tokens = " ".join(["<EEG_SEQ>"] * 96)
-        prompt = (
+        base_prompt = (
             "System: Based on the following EEG signals, reconstruct the text. "
             f"The length of the sentence is {length:.1f} words. "
             f"The average surprisal value is {surprisal:.2f}. "
-            f"Sentiment: {sentiment_text}. Topic: {topic_text}. "
-            "Target:"
+            f"Sentiment: {sentiment_text}. Topic: {topic_text}."
         )
-        return prompt
+
+        # Add metadata if available
+        if prompt_dict is not None:
+            base_prompt += (
+                f" This EEG signal comes from {prompt_dict['dataset']} " 
+                f"{prompt_dict['task']} subject {prompt_dict['subject']}."
+            )
+
+        base_prompt += " Target:"
+
+        return base_prompt
 
     def create_cross_attention_mask(self, batch_size: int, encoder_seq_len: int) -> Optional[torch.Tensor]:
         """
@@ -165,7 +180,8 @@ class Stage2ReconstructionModel(nn.Module):
         surprisal: torch.Tensor,
         ei: torch.Tensor,
         Zi: torch.Tensor,
-        target_text: list
+        target_text: list,
+        prompt_dicts: Optional[List[Dict]] = None
     ) -> torch.Tensor:
         """
         Forward pass with EEG features as encoder hidden states.
@@ -178,15 +194,22 @@ class Stage2ReconstructionModel(nn.Module):
             ei: (batch_size, 1024) global EEG vectors
             Zi: (batch_size, 96, 1024) EEG sequences
             target_text: List of target text strings
+            prompt_dicts: Optional[List[Dict]] dicts of 'dataset', 'task', 'subject'
 
         Returns:
             loss: Cross-entropy loss
         """
         batch_size = label_task1.shape[0]
 
-        # Build prompts with label text
+        # Build prompts with optional metadata
         prompts = [
-            self.build_prompt(label_task1[i].item(), label_task2[i].item(), length[i].item(), surprisal[i].item())
+            self.build_prompt(
+                label_task1[i].item(),
+                label_task2[i].item(),
+                length[i].item(),
+                surprisal[i].item(),
+                prompt_dicts[i] if prompt_dicts else None
+            )
             for i in range(batch_size)
         ]
 
@@ -257,16 +280,23 @@ class Stage2ReconstructionModel(nn.Module):
         surprisal: torch.Tensor,
         ei: torch.Tensor,
         Zi: torch.Tensor,
-        max_length: int = 50
+        max_length: int = 50,
+        prompt_dicts: Optional[List[Dict]] = None
     ) -> list:
         """
         Generate text from EEG features.
         """
         batch_size = label_task1.shape[0]
 
-        # Build prompts with label text
+        # Build prompts with optional metadata
         prompts = [
-            self.build_prompt(label_task1[i].item(), label_task2[i].item(), length[i].item(), surprisal[i].item())
+            self.build_prompt(
+                label_task1[i].item(),
+                label_task2[i].item(),
+                length[i].item(),
+                surprisal[i].item(),
+                prompt_dicts[i] if prompt_dicts else None
+            )
             for i in range(batch_size)
         ]
 
