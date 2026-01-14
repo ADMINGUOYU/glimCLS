@@ -371,37 +371,51 @@ def generate_samples(model, val_loader, device, num_samples=3, use_metadata=Fals
     return samples
 
 
-def save_checkpoint(epoch, val_loss, train_loss, model, optimizer, args, checkpoint_dir, checkpoint_tracker, max_checkpoints=3):
+def save_checkpoint(epoch, val_loss, train_loss, model, optimizer, args, 
+                    checkpoint_dir, checkpoint_tracker, max_checkpoints=3,
+                    value_to_track = None, mode = 'min', save_last = True):
     """Save checkpoint with top-k management."""
+
+    # Default -> track val loss
+    if value_to_track is None:
+        value_to_track = val_loss
+
     checkpoint_path = os.path.join(
         checkpoint_dir,
-        f"model-epoch{epoch:02d}-loss{val_loss:.4f}.pt"
+        f"model-epoch{epoch:02d}-loss{val_loss:.4f}-tracking{value_to_track:.4f}.pt"
     )
 
     torch.save({
         'epoch': epoch,
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
-        'prompt_type': model.prompt_type,
         'train_loss': train_loss,
         'val_loss': val_loss,
         'args': vars(args)
     }, checkpoint_path)
 
     # Track for top-k
-    checkpoint_tracker.append((val_loss, epoch, checkpoint_path))
-    checkpoint_tracker.sort(key=lambda x: x[0])  # Sort by loss (ascending)
+    checkpoint_tracker.append((value_to_track, epoch, checkpoint_path))
+    checkpoint_tracker.sort(key=lambda x: x[0])
 
     # Save last checkpoint
-    last_path = os.path.join(checkpoint_dir, "last.pt")
-    shutil.copy(checkpoint_path, last_path)
+    if save_last:
+        last_path = os.path.join(checkpoint_dir, "last.pt")
+        shutil.copy(checkpoint_path, last_path)
 
     # Remove old checkpoints beyond top-k
-    if len(checkpoint_tracker) > max_checkpoints:
-        _, _, old_path = checkpoint_tracker.pop()
-        if os.path.exists(old_path):
-            os.remove(old_path)
-            print(f"Removed old checkpoint: {old_path}")
+    # (Do not remove anything if max_checkpoints <= 0)
+    if max_checkpoints > 0:
+        if len(checkpoint_tracker) > max_checkpoints:
+            if mode == 'min':
+                _, _, old_path = checkpoint_tracker.pop()
+            elif mode == 'max':
+                _, _, old_path = checkpoint_tracker.pop(0)
+            else:
+                raise f"[ERROR] Unexpected mode {mode}"
+            if os.path.exists(old_path):
+                os.remove(old_path)
+                print(f"Removed old checkpoint: {old_path}")
 
     return checkpoint_path
 
@@ -585,6 +599,7 @@ def main():
 
     best_val_loss = float('inf')
     checkpoint_tracker = []
+    bleu_ckpt_tracker = []
 
     for epoch in range(1, args.max_epochs + 1):
         print(f"\nEpoch {epoch}/{args.max_epochs}")
@@ -647,9 +662,17 @@ def main():
             print(f"  Prediction: {sample['prediction']}")
 
         # Save checkpoint with top-k management
+        # Also save bleu recorded ckpts
         checkpoint_path = save_checkpoint(
             epoch, val_loss, train_loss, model, optimizer, args,
             checkpoint_dir, checkpoint_tracker, max_checkpoints=3
+        )
+        save_checkpoint(
+            epoch, val_loss, train_loss, model, optimizer, args,
+            checkpoint_dir, bleu_ckpt_tracker, max_checkpoints=5,
+            value_to_track = metrics['mean']['bleu1'],
+            mode = 'max',
+            save_last = False
         )
         print(f"\nCheckpoint saved: {checkpoint_path}")
 
@@ -699,6 +722,36 @@ def main():
 
     # Close TensorBoard writer
     writer.close()
+
+    # Test ckpts in bleu_ckpt_tracker
+    print("\n" + "=" * 80)
+    print("Testing higher BLEU-1 checkpoints...")
+    print("=" * 80)
+    from inference import predict_stage2
+    import pandas as pd
+    df = pd.read_pickle(args.data_path)
+    test_loader, df_split = predict_stage2.create_dataloader(df, 'test', args.batch_size, args.sentiment_labels, args.topic_labels)
+    for (bleu, epoch, path) in bleu_ckpt_tracker:
+        print(f"Testing epoch-{epoch} path-{path}")
+        # WARNING!!! Using functions from predict stage2
+        model = predict_stage2.load_model_from_checkpoint(path, None, None, None, args.device)
+        predictions , _ , _ , _ = predict_stage2.generate_predictions(model, test_loader, args.device)
+        # Compute text generation metrics (BLEU, ROUGE, WER)
+        metrics = predict_stage2.compute_metrics(predictions)
+        retrieval_metrics_gen = predict_stage2.compute_retrieval_metrics(predictions, top_k = [1, 5, 10], device = args.device)
+         # Add retrieval metrics to the metrics dictionary
+        metrics["mean"]["retrieval_eeg_gen_top01"] = retrieval_metrics_gen["retrieval_acc_top01"]
+        metrics["mean"]["retrieval_eeg_gen_top05"] = retrieval_metrics_gen["retrieval_acc_top05"]
+        metrics["mean"]["retrieval_eeg_gen_top10"] = retrieval_metrics_gen["retrieval_acc_top10"]
+        # Save the metrics
+        output_path = path.replace(".pt", ".csv")
+        predict_stage2.save_predictions(predictions, df_split, output_path, metrics)
+        # Verbose
+        print(f"Top-1 Accuracy:   {retrieval_metrics_gen['retrieval_acc_top01']:.4f}")
+        print(f"Top-5 Accuracy:   {retrieval_metrics_gen['retrieval_acc_top05']:.4f}")
+        print(f"Top-10 Accuracy:  {retrieval_metrics_gen['retrieval_acc_top10']:.4f}")
+        print("-" * 80)
+
 
     print("\nTraining complete!")
     print(f"Logs saved to: {run_dir}")
