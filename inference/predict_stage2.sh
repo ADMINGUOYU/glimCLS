@@ -15,15 +15,15 @@ export HF_ENDPOINT="https://hf-mirror.com"
 DATA_PATH="./data/zuco_preprocessed_dataframe/zuco2best.df"
 
 # Model checkpoint - trained Stage 2 model
-CHECKPOINT="/mnt/afs/250010218/glimCLS/logs/glim_parallel_20260109_071609/checkpoints/model-epoch29-loss_surprisal0.6195.ckpt"
+CHECKPOINT="/mnt/afs/250010218/glimCLS/logs/stage2_MTV_noei_noprompt/fullfreeze_20260114_081058/checkpoints/model-epoch02-loss3.1736.pt"
 
 # Use metadata (prompts: dataset, task, subject)
 USE_METADATA=false
 
 # Output path
-OUTPUT_DIR=".."
+OUTPUT_DIR="/mnt/afs/250010218/glimCLS/logs/stage2_MTV_noei_noprompt/fullfreeze_20260114_081058/"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-OUTPUT_PATH="${OUTPUT_DIR}/predictions_stage2_${TIMESTAMP}.csv"
+OUTPUT_PATH="${OUTPUT_DIR}/predictions_stage2_epoch2_${TIMESTAMP}.csv"
 
 # Model configuration (should match training)
 TEXT_MODEL="google/flan-t5-large"

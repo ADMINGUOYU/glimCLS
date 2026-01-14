@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Zuco1+2 single gpu without mse , len loss weight 0.9 +channel weights
-
+# HIDDEN_EEG_LEN=64
 
 # Training script for GLIM_PARALLEL model
 # Multi-task: 2 classification (sentiment, topic) + 2 regression (length, surprisal)
@@ -17,12 +17,12 @@
 # CONFIGURATION PARAMETERS
 # ============================================================================
 #some important changes made here
-USE_ZUCO1_ONLY=true
-USE_CHANNEL_WEIGHTS=false
+USE_ZUCO1_ONLY=false
+USE_CHANNEL_WEIGHTS=true
 
 USE_SCALED_LR=true          # Scale LR by number of GPUs in multi-GPU training
 USE_PER_GPU_BATCH_SIZE=false # Treat BATCH_SIZE as per-GPU (global = BATCH_SIZE × num_gpus)
-USE_CLASS_WEIGHTS=true     # Enable per-class loss weighting based on inverse frequency
+USE_CLASS_WEIGHTS=false     # Enable per-class loss weighting based on inverse frequency
 
 
 
@@ -44,6 +44,7 @@ MODEL_CACHE_DIR="/mnt/afs/250010218/hf_cache"
 
 HIDDEN_DIM=128
 EMBED_DIM=1024
+# have to be set at 96
 HIDDEN_EEG_LEN=96
 N_IN_BLOCKS=6
 N_OUT_BLOCKS=6
@@ -68,7 +69,7 @@ SURPRISAL_LOSS_WEIGHT=0.3
 BATCH_SIZE=72
 VAL_BATCH_SIZE=24
 
-MAX_EPOCHS=200
+MAX_EPOCHS=100
 
 
 # Base learning rate for single GPU
@@ -82,18 +83,18 @@ SEED=42
 
 
 # Hardware multi-GPU settings
-ACCELERATOR="gpu"
-STRATEGY="ddp"
-DEVICE=(0 1 2 3 4 5 6 7)  # 8 GPUs
-PRECISION="bf16-mixed"
-NUM_WORKERS=4
-
-# Hardware single-GPU settings
 # ACCELERATOR="gpu"
-# STRATEGY="auto"       
-# DEVICE=(0)            
+# STRATEGY="ddp"
+# DEVICE=(0 1 2 3 4 5 6 7)  # 8 GPUs
 # PRECISION="bf16-mixed"
 # NUM_WORKERS=4
+
+# Hardware single-GPU settings
+ACCELERATOR="gpu"
+STRATEGY="auto"       
+DEVICE=(0)            
+PRECISION="bf16-mixed"
+NUM_WORKERS=4
 
 
 

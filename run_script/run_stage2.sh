@@ -45,7 +45,7 @@ PROMPT_TYPE=default
 ATTENTION_MASK_TYPE="bidirectional"  # Options: "bidirectional" or "causal"
 
 # Global EEG Feature
-USE_EI=true  # Set to false to disable global EEG feature
+USE_EI=false  # Set to false to disable global EEG feature
 
 # Projection Layer
 USE_PROJECTOR=true  # Set to false to disable trainable projection layer
@@ -61,7 +61,7 @@ LABEL_EMBED_INIT=""
 # Training
 MAX_EPOCHS=15
 PROJECTOR_LR=2e-4
-LR=2e-4
+LR=5e-5
 MIN_LR=1e-6
 WARMUP_EPOCHS=3
 WEIGHT_DECAY=0.01
@@ -70,8 +70,8 @@ WEIGHT_DECAY=0.01
 DEVICE="cuda:0"
 
 # Logging
-LOG_DIR="./logs/stage2_prompt"
-EXPERIMENT_NAME="YU_EI_MTV_fullfreeze_check"
+LOG_DIR="./logs/stage2_LR_2e4_5e5_MTV_ei_prompt"
+EXPERIMENT_NAME="freeze"
 
 # ============================================================================
 
