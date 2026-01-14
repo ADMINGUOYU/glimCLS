@@ -180,6 +180,12 @@ def parse_args():
         help='Maximum learning rate'
     )
     parser.add_argument(
+        '--proj_lr',
+        type=float,
+        default=1e-4,
+        help='Learning rate for projection layer (only used when --use_projector is set)'
+    )
+    parser.add_argument(
         '--min_lr',
         type=float,
         default=1e-6,
@@ -445,6 +451,8 @@ def main():
     print(f"Attention mask type: {args.attention_mask_type}")
     print(f"Use global EEG (ei): {args.use_ei}")
     print(f"Use projection layer: {args.use_projector}")
+    if args.use_projector:
+        print(f"Projection layer LR: {args.proj_lr}")
     print(f"Using metadata in prompts: {args.use_metadata}")
     print(f"Max epochs: {args.max_epochs}")
     print(f"Learning rate: {args.lr} (max), {args.min_lr} (min)")
@@ -505,9 +513,22 @@ def main():
             print(f"  {name:60s} {str(tuple(param.shape)):20s}")
     print("-" * 80)
 
+    # Create parameter groups
+    optimizer_groups = [
+        {"params": [p for n, p in model.named_parameters() 
+                    if "projector" not in n and p.requires_grad]}
+    ]
+
+    if args.use_projector:
+        optimizer_groups.append({
+            "params": [p for n, p in model.named_parameters() 
+                       if "projector" in n and p.requires_grad],
+            "lr": args.proj_lr
+        })
+
     # Create optimizer
     optimizer = AdamW(
-        filter(lambda p: p.requires_grad, model.parameters()),
+        optimizer_groups,
         lr=args.lr,
         weight_decay=args.weight_decay
     )
@@ -571,6 +592,11 @@ def main():
         writer.add_scalar('train/loss', train_loss, epoch)
         writer.add_scalar('train/perplexity', train_ppl, epoch)
         writer.add_scalar('train/lr', current_lr, epoch)
+
+        # Log projector LR if we have projector
+        if args.use_projector:
+            current_lr_proj = optimizer.param_groups[1]['lr']
+            writer.add_scalar('train/lr_proj', current_lr_proj, epoch)
 
         # Validate
         val_loss, val_ppl, metrics, retrieval_metrics_gen = validate(
@@ -646,7 +672,6 @@ def main():
     writer.add_scalar('test/rouge1_recall', metrics['mean']['rouge1_recall'], args.max_epochs)
     writer.add_scalar('test/wer', metrics['mean']['wer'], args.max_epochs)
 
-    # Log hyperparameters with final metrics
     # Log hyperparameters with final metrics
     # Convert args to dict with only scalar/string values (TensorBoard add_hparams doesn't support lists)
     hparams = {k: str(v) if isinstance(v, list) else v for k, v in vars(args).items()}

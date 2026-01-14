@@ -57,6 +57,7 @@ LABEL_EMBED_INIT=""
 
 # Training
 MAX_EPOCHS=15
+PROJECTOR_LR=2e-4
 LR=2e-4
 MIN_LR=1e-6
 WARMUP_EPOCHS=3
@@ -79,6 +80,9 @@ echo "  LoRA Rank: $LORA_RANK"
 echo "  Attention Mask Type: $ATTENTION_MASK_TYPE"
 echo "  Use Global EEG (ei): $USE_EI"
 echo "  Use Projection Layer: $USE_PROJECTOR"
+if [ "$USE_PROJECTOR" = true ]; then
+    echo "  Projector LR: $PROJECTOR_LR"
+fi
 echo "  Use Metadata: $USE_METADATA"
 if [ -n "$DATA_PATH" ]; then
     echo "  Data Path: $DATA_PATH"
@@ -132,6 +136,7 @@ fi
 # Add use_projector flag
 if [ "$USE_PROJECTOR" = true ]; then
     CMD="$CMD --use_projector"
+    CMD="$CMD --proj_lr \"$PROJECTOR_LR\""
 else
     CMD="$CMD --no_projector"
 fi
