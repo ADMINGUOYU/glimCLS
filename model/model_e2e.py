@@ -49,6 +49,14 @@ class GLIM_Stage2_E2E(nn.Module):
                          if 'text_model' not in k and 'tokenizer' not in k}
 
         stage1.load_state_dict(state_dict, strict=False)
+
+        # Manually load regression statistics buffers if they exist
+        if 'length_mean' in state_dict:
+            stage1.register_buffer('length_mean', state_dict['length_mean'])
+            stage1.register_buffer('length_std', state_dict['length_std'])
+            stage1.register_buffer('surprisal_mean', state_dict['surprisal_mean'])
+            stage1.register_buffer('surprisal_std', state_dict['surprisal_std'])
+
         return stage1
 
     def forward(self, batch: Dict) -> Dict[str, torch.Tensor]:
@@ -178,6 +186,64 @@ class GLIM_Stage2_E2E(nn.Module):
             'loss_surprisal': loss_surprisal,
             'loss_aux_total': loss_aux_total
         }
+
+    @torch.no_grad()
+    def predict_labels(self, ei: torch.Tensor) -> Dict:
+        """Predict sentiment, topic, length, and surprisal from EEG embeddings."""
+        # Sentiment classification
+        sentiment_logits = self.stage1.sentiment_classifier(ei)
+        sentiment_ids = sentiment_logits.argmax(dim=1)
+        sentiment_labels = [self.stage1.classification_tasks['sentiment'][idx] for idx in sentiment_ids.cpu().tolist()]
+
+        # Topic classification
+        topic_logits = self.stage1.topic_classifier(ei)
+        topic_ids = topic_logits.argmax(dim=1)
+        topic_labels = [self.stage1.classification_tasks['topic'][idx] for idx in topic_ids.cpu().tolist()]
+
+        # Length regression (denormalize)
+        length_pred = self.stage1.length_regressor(ei)
+        length = (length_pred * self.stage1.length_std + self.stage1.length_mean).squeeze(1)
+
+        # Surprisal regression (denormalize)
+        surprisal_pred = self.stage1.surprisal_regressor(ei)
+        surprisal = (surprisal_pred * self.stage1.surprisal_std + self.stage1.surprisal_mean).squeeze(1)
+
+        return {
+            'sentiment_ids': sentiment_ids,
+            'sentiment_labels': sentiment_labels,
+            'topic_ids': topic_ids,
+            'topic_labels': topic_labels,
+            'length': length,
+            'surprisal': surprisal
+        }
+
+    @torch.no_grad()
+    def generate_with_predicted_labels(self, batch: Dict, max_length: int = 64) -> List[str]:
+        """Generate text using predicted labels from EEG (no ground truth needed)."""
+        self.eval()
+
+        # Stage 1: Get embeddings
+        Zi, ei, _ = self._stage1_forward(batch)
+
+        # Predict labels from EEG
+        predictions = self.predict_labels(ei)
+
+        # Extract prompt dicts
+        prompt_dicts = self._extract_prompt_dicts(batch['prompt'])
+
+        # Stage 2: Generate with predicted labels
+        generated_texts = self.stage2.generate(
+            label_task1=predictions['sentiment_ids'],
+            label_task2=predictions['topic_ids'],
+            length=predictions['length'],
+            surprisal=predictions['surprisal'],
+            ei=ei,
+            Zi=Zi,
+            max_length=max_length,
+            prompt_dicts=prompt_dicts
+        )
+
+        return generated_texts
 
     @torch.no_grad()
     def generate(self, batch: Dict, max_length: int = 64, num_beams: int = 4) -> List[str]:

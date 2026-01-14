@@ -24,7 +24,8 @@ class Stage2ReconstructionModel(nn.Module):
         sentiment_labels: list = None,
         topic_labels: list = None,
         prompt_type: str = "default",
-        device: str = "cuda:0"
+        device: str = "cuda:0",
+        cache_dir: Optional[str] = None
     ):
         """
         Args:
@@ -59,10 +60,11 @@ class Stage2ReconstructionModel(nn.Module):
             self.model_dtype = torch.float32
 
         # Load tokenizer and model
-        self.tokenizer = T5Tokenizer.from_pretrained(model_name)
+        self.tokenizer = T5Tokenizer.from_pretrained(model_name, cache_dir=cache_dir)
         self.model = T5ForConditionalGeneration.from_pretrained(
             model_name,
-            torch_dtype=self.model_dtype
+            torch_dtype=self.model_dtype,
+            cache_dir=cache_dir
         )
 
         # Add special tokens and resize BEFORE applying LoRA

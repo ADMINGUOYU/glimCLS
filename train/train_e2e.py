@@ -10,7 +10,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from data.datamodule import GLIMDataModule
+from data.e2e_datamodule import E2EDataModule
 from model.model_e2e import GLIM_Stage2_E2E
 
 
@@ -86,7 +86,9 @@ def parse_args():
     parser.add_argument('--min_lr', type=float, default=1e-6, help='Minimum learning rate')
 
     # Data arguments
-    parser.add_argument('--data_path', required=True, help='Path to data')
+    parser.add_argument('--eeg_data_path', required=True, help='Path to EEG dataframe')
+    parser.add_argument('--labels_data_path', required=True, help='Path to labels dataframe')
+    parser.add_argument('--use_mtv', action='store_true', help='Use MTV for training data augmentation')
     parser.add_argument('--batch_size', type=int, default=24, help='Batch size')
     parser.add_argument('--num_workers', type=int, default=4, help='Number of workers')
 
@@ -95,6 +97,7 @@ def parse_args():
     parser.add_argument('--device', type=int, nargs='+', default=[0], help='GPU device(s)')
     parser.add_argument('--log_dir', default='./logs/e2e', help='Log directory')
     parser.add_argument('--experiment_name', default='glim_stage2_e2e', help='Experiment name')
+    parser.add_argument('--model_cache_dir', default=None, help='Model cache directory')
 
     return parser.parse_args()
 
@@ -246,8 +249,10 @@ def main():
     device = torch.device(f"cuda:{args.device[0]}" if torch.cuda.is_available() else "cpu")
 
     # Load data
-    datamodule = GLIMDataModule(
-        data_path=args.data_path,
+    datamodule = E2EDataModule(
+        eeg_data_path=args.eeg_data_path,
+        labels_data_path=args.labels_data_path,
+        use_mtv=args.use_mtv,
         batch_size=args.batch_size,
         num_workers=args.num_workers
     )
@@ -263,7 +268,8 @@ def main():
         'use_ei': args.use_ei,
         'use_projector': args.use_projector,
         'prompt_type': args.prompt_type,
-        'device': str(device)
+        'device': str(device),
+        'cache_dir': args.model_cache_dir
     }
 
     loss_config = {

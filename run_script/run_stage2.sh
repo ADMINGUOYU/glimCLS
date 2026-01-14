@@ -35,17 +35,17 @@ TOPIC_LABELS=("Biographies and Factual Knowledge" "Movie Reviews and Sentiment")
 
 # Model Architecture
 TEXT_MODEL="google/flan-t5-large"
-FREEZE_STRATEGY="full_freeze_llm"  # Options: "lora" or "full_freeze_llm" or "full_trainable_llm"
+FREEZE_STRATEGY="full_trainable_llm"  # Options: "lora" or "full_freeze_llm" or "full_trainable_llm"
 LORA_RANK=8
 
 # T5 prompt type
-PROMPT_TYPE=default
+PROMPT_TYPE=length_sentiment_topic
 
 # Attention Mask Strategy
 ATTENTION_MASK_TYPE="bidirectional"  # Options: "bidirectional" or "causal"
 
 # Global EEG Feature
-USE_EI=false  # Set to false to disable global EEG feature
+USE_EI=true  # Set to false to disable global EEG feature
 
 # Projection Layer
 USE_PROJECTOR=true  # Set to false to disable trainable projection layer
@@ -70,8 +70,8 @@ WEIGHT_DECAY=0.01
 DEVICE="cuda:0"
 
 # Logging
-LOG_DIR="./logs/stage2_LR_2e4_5e5_MTV_ei_prompt"
-EXPERIMENT_NAME="freeze"
+LOG_DIR="./logs/stage2_LR_2e-4_5e-5_MTV_ei_prompt"
+EXPERIMENT_NAME="fulltrain"
 
 # ============================================================================
 

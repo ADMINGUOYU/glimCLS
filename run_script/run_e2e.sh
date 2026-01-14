@@ -1,11 +1,12 @@
 #!/bin/bash
 
 # Stage 1 Configuration
-STAGE1_CHECKPOINT="./logs/glim_parallel_best/checkpoints/best.ckpt"
+STAGE1_CHECKPOINT="/mnt/afs/250010218/glimCLS/logs/glim_parallel_20260110_175544/checkpoints/model-epoch43-acc_topic0.9072.ckpt"
 FREEZE_STAGE1=false
 
 # Stage 2 Configuration
 TEXT_MODEL="google/flan-t5-large"
+MODEL_CACHE_DIR="/mnt/afs/250010218/hf_cache"
 FREEZE_STRATEGY="lora"
 LORA_RANK=8
 USE_EI=true
@@ -22,15 +23,17 @@ W_LENGTH=0.25
 W_SURPRISAL=0.25
 
 # Optimizer Configuration
-S1_LR=1e-5      # Lower LR for fine-tuning Stage 1
+S1_LR=5e-5      # Lower LR for fine-tuning Stage 1
 PROJ_LR=1e-4    # Higher LR for new projector
-LLM_LR=1e-4     # Standard LR for LoRA
+LLM_LR=1e-5     # Standard LR for LoRA
 WEIGHT_DECAY=0.01
 WARMUP_EPOCHS=3
 MIN_LR=1e-6
 
 # Data Configuration
-DATA_PATH="./data/zuco_preprocessed_dataframe/zuco_merged.df"
+EEG_DATA_PATH="./data/ZUCO1-2_FOR_GLIMCLS/zuco_merged_with_variants.df"
+LABELS_DATA_PATH="./data/zuco_preprocessed_dataframe/zuco2best.df"
+USE_MTV=false  # Enable MTV for 8x training data augmentation
 BATCH_SIZE=24
 NUM_WORKERS=4
 
@@ -57,7 +60,8 @@ CMD="python -m train.train_e2e \
     --weight_decay $WEIGHT_DECAY \
     --warmup_epochs $WARMUP_EPOCHS \
     --min_lr $MIN_LR \
-    --data_path $DATA_PATH \
+    --eeg_data_path $EEG_DATA_PATH \
+    --labels_data_path $LABELS_DATA_PATH \
     --batch_size $BATCH_SIZE \
     --num_workers $NUM_WORKERS \
     --max_epochs $MAX_EPOCHS \
@@ -84,6 +88,14 @@ fi
 
 if [ "$USE_AUX_LOSS" = true ]; then
     CMD="$CMD --use_aux_loss"
+fi
+
+if [ "$USE_MTV" = true ]; then
+    CMD="$CMD --use_mtv"
+fi
+
+if [ -n "$MODEL_CACHE_DIR" ]; then
+    CMD="$CMD --model_cache_dir $MODEL_CACHE_DIR"
 fi
 
 # Execute
