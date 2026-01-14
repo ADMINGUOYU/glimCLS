@@ -586,7 +586,11 @@ def main():
             args.device, epoch, use_metadata=args.use_metadata
         )
         current_lr = optimizer.param_groups[0]['lr']
-        print(f"Train Loss: {train_loss:.4f} | Train Perplexity: {train_ppl:.2f} | LR: {current_lr:.2e}")
+        if args.use_projector:
+            current_lr_proj = optimizer.param_groups[1]['lr']
+            print(f"Train Loss: {train_loss:.4f} | Train Perplexity: {train_ppl:.2f} | LR: {current_lr:.2e} | Proj_LR: {current_lr_proj:.2e}")
+        else:
+            print(f"Train Loss: {train_loss:.4f} | Train Perplexity: {train_ppl:.2f} | LR: {current_lr:.2e}")
 
         # Log training metrics to TensorBoard
         writer.add_scalar('train/loss', train_loss, epoch)
@@ -595,7 +599,6 @@ def main():
 
         # Log projector LR if we have projector
         if args.use_projector:
-            current_lr_proj = optimizer.param_groups[1]['lr']
             writer.add_scalar('train/lr_proj', current_lr_proj, epoch)
 
         # Validate
