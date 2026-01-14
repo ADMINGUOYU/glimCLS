@@ -322,7 +322,7 @@ def validate(model, val_loader, device, use_metadata=False):
 
     # WARNING!!! Using functions from predict stage2
     from inference import predict_stage2
-    predictions , _ , _ , _ = predict_stage2.generate_predictions(model, val_loader, device)
+    predictions , _ , _ , _ = predict_stage2.generate_predictions(model, val_loader, device, use_metadata=use_metadata)
     # Compute text generation metrics (BLEU, ROUGE, WER)
     metrics = predict_stage2.compute_metrics(predictions)
     retrieval_metrics_gen = predict_stage2.compute_retrieval_metrics(predictions, top_k = [1, 5, 10], device = device)
@@ -735,7 +735,7 @@ def main():
         print(f"Testing epoch-{epoch} path-{path}")
         # WARNING!!! Using functions from predict stage2
         model = predict_stage2.load_model_from_checkpoint(path, None, None, None, args.device)
-        predictions , _ , _ , _ = predict_stage2.generate_predictions(model, test_loader, args.device)
+        predictions , _ , _ , _ = predict_stage2.generate_predictions(model, test_loader, args.device, use_metadata=args.use_metadata)
         # Compute text generation metrics (BLEU, ROUGE, WER)
         metrics = predict_stage2.compute_metrics(predictions)
         retrieval_metrics_gen = predict_stage2.compute_retrieval_metrics(predictions, top_k = [1, 5, 10], device = args.device)
