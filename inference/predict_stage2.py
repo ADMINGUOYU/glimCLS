@@ -191,10 +191,12 @@ def load_model_from_checkpoint(
     model_name = saved_args.get("text_model", text_model)
     strategy = saved_args.get("freeze_strategy", freeze_strategy)
     rank = saved_args.get("lora_rank", lora_rank)
+    prompt_type = saved_args.get("prompt_type", 'default')
     
     print(f"  Model: {model_name}")
     print(f"  Freeze strategy: {strategy}")
     print(f"  LoRA rank: {rank}")
+    print(f"  Prompt type: {prompt_type}")
     
     # Create model
     model = Stage2ReconstructionModel(

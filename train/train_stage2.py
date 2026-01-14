@@ -165,6 +165,13 @@ def parse_args():
         action='store_true',
         help='Include dataset/task/subject metadata in prompts'
     )
+    # Prompt type
+    parser.add_argument(
+        '--prompt_type',
+        type=str,
+        default='default',
+        help='Type of prompt to use for training'
+    )
 
     # Training arguments
     parser.add_argument(
@@ -375,6 +382,7 @@ def save_checkpoint(epoch, val_loss, train_loss, model, optimizer, args, checkpo
         'epoch': epoch,
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
+        'prompt_type': model.prompt_type,
         'train_loss': train_loss,
         'val_loss': val_loss,
         'args': vars(args)
@@ -453,6 +461,7 @@ def main():
     print(f"Use projection layer: {args.use_projector}")
     if args.use_projector:
         print(f"Projection layer LR: {args.proj_lr}")
+    print(f"Prompt type: {args.prompt_type}")
     print(f"Using metadata in prompts: {args.use_metadata}")
     print(f"Max epochs: {args.max_epochs}")
     print(f"Learning rate: {args.lr} (max), {args.min_lr} (min)")
@@ -496,6 +505,7 @@ def main():
         label_embed_init=None,
         sentiment_labels=args.sentiment_labels,
         topic_labels=args.topic_labels,
+        prompt_type=args.prompt_type,
         device=args.device
     )
     print("Model initialized successfully")

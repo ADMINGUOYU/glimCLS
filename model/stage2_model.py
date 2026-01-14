@@ -23,6 +23,7 @@ class Stage2ReconstructionModel(nn.Module):
         label_embed_init: Optional[Dict] = None,
         sentiment_labels: list = None,
         topic_labels: list = None,
+        prompt_type: str = "default",
         device: str = "cuda:0"
     ):
         """
@@ -36,6 +37,7 @@ class Stage2ReconstructionModel(nn.Module):
             label_embed_init: Optional pre-trained label embeddings
             sentiment_labels: List of sentiment label names
             topic_labels: List of topic label names
+            prompt_type: str -> set how to set the prompts
             device: Device to use
         """
         super().__init__()
@@ -44,6 +46,7 @@ class Stage2ReconstructionModel(nn.Module):
         self.attention_mask_type = attention_mask_type
         self.use_ei = use_ei
         self.use_projector = use_projector
+        self.prompt_type = prompt_type
 
         # Store label names for prompt generation
         self.sentiment_labels = sentiment_labels if sentiment_labels else ['non_neutral', 'neutral']
@@ -137,23 +140,31 @@ class Stage2ReconstructionModel(nn.Module):
         sentiment_text = self.sentiment_labels[sentiment_idx]
         topic_text = self.topic_labels[topic_idx]
 
-        base_prompt = (
-            "System: Based on the following EEG signals, reconstruct the text. "
-            f"The length of the sentence is {length:.1f} words. "
-            f"The average surprisal value is {surprisal:.2f}. "
-            f"Sentiment: {sentiment_text}. Topic: {topic_text}."
-        )
+        # Base prompt components
+        components = [
+            "System: Based on the following EEG signals, reconstruct the text."
+        ]
+
+        # Add components based on prompt type
+        if any(word in self.prompt_type for word in ["default", "length"]):
+            components.append(f"The length of the sentence is {length:.1f} words.")
+        if any(word in self.prompt_type for word in ["default", "surprisal"]):   
+            components.append(f"The average surprisal value is {surprisal:.2f}.")
+        if any(word in self.prompt_type for word in ["default", "sentiment"]):   
+            components.append(f"Sentiment: {sentiment_text}.")
+        if any(word in self.prompt_type for word in ["default", "topic"]):   
+            components.append(f"Topic: {topic_text}.")
 
         # Add metadata if available
         if prompt_dict is not None:
-            base_prompt += (
-                f" This EEG signal comes from {prompt_dict['dataset']} " 
+            components.append(
+                f"This EEG signal comes from {prompt_dict['dataset']} "
                 f"{prompt_dict['task']} subject {prompt_dict['subject']}."
             )
 
-        base_prompt += " Target:"
+        components.append("Target: ")
 
-        return base_prompt
+        return " ".join(components)
 
     def create_cross_attention_mask(self, batch_size: int, encoder_seq_len: int) -> Optional[torch.Tensor]:
         """

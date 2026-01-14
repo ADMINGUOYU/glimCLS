@@ -38,6 +38,9 @@ TEXT_MODEL="google/flan-t5-large"
 FREEZE_STRATEGY="full_freeze_llm"  # Options: "lora" or "full_freeze_llm" or "full_trainable_llm"
 LORA_RANK=8
 
+# T5 prompt type
+PROMPT_TYPE=default
+
 # Attention Mask Strategy
 ATTENTION_MASK_TYPE="bidirectional"  # Options: "bidirectional" or "causal"
 
@@ -84,6 +87,7 @@ if [ "$USE_PROJECTOR" = true ]; then
     echo "  Projector LR: $PROJECTOR_LR"
 fi
 echo "  Use Metadata: $USE_METADATA"
+echo "  Prompt type: $PROMPT_TYPE"
 if [ -n "$DATA_PATH" ]; then
     echo "  Data Path: $DATA_PATH"
     echo -n "  Sentiment Labels: "
@@ -124,7 +128,8 @@ CMD="python -m train.train_stage2 \
     --device \"$DEVICE\" \
     --log_dir \"$LOG_DIR\" \
     --experiment_name \"$EXPERIMENT_NAME\" \
-    --seed $SEED"
+    --seed $SEED \
+    --prompt_type \"$PROMPT_TYPE\"" \
 
 # Add use_ei flag
 if [ "$USE_EI" = true ]; then
