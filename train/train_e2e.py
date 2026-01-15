@@ -72,6 +72,7 @@ def parse_args():
     parser.add_argument('--w_align', type=float, default=0.1, help='Alignment loss weight')
     parser.add_argument('--use_aux_loss', action='store_true', default=True, help='Enable auxiliary losses')
     parser.add_argument('--no_use_aux_loss', action='store_false', dest='use_aux_loss')
+    parser.add_argument('--w_llm', type=float, default=1.0, help='LLM loss weight')
     parser.add_argument('--w_sentiment', type=float, default=0.25, help='Sentiment loss weight')
     parser.add_argument('--w_topic', type=float, default=0.25, help='Topic loss weight')
     parser.add_argument('--w_length', type=float, default=0.25, help='Length loss weight')
@@ -223,6 +224,31 @@ def evaluate(model, dataloader, device):
     return metrics
 
 
+@torch.no_grad()
+def test_and_save_predictions(model, dataloader, device, save_path):
+    """Generate predictions on test set and save to CSV."""
+    import csv
+
+    model.eval()
+    predictions = []
+    targets = []
+
+    for batch in tqdm(dataloader, desc="Testing"):
+        batch = move_batch_to_device(batch, device)
+        generated_texts = model.generate(batch)
+
+        predictions.extend(generated_texts)
+        targets.extend(batch['target text'])
+
+    with open(save_path, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow(['prediction', 'target'])
+        for pred, target in zip(predictions, targets):
+            writer.writerow([pred, target])
+
+    print(f"Saved predictions to {save_path}")
+
+
 def save_checkpoint(model, optimizer, epoch, metrics, save_path):
     """Save checkpoint."""
     checkpoint = {
@@ -260,6 +286,9 @@ def main():
     train_loader = datamodule.train_dataloader()
     val_loader = datamodule.val_dataloader()
 
+    datamodule.setup('test')
+    test_loader = datamodule.test_dataloader()
+
     # Initialize model
     stage2_config = {
         'model_name': args.text_model,
@@ -276,6 +305,7 @@ def main():
         'use_align_loss': args.use_align_loss,
         'use_aux_loss': args.use_aux_loss,
         'w_align': args.w_align,
+        'w_llm': args.w_llm,
         'w_sentiment': args.w_sentiment,
         'w_topic': args.w_topic,
         'w_length': args.w_length,
@@ -319,6 +349,12 @@ def main():
                 model, optimizer, epoch, val_metrics,
                 checkpoint_dir / 'best_loss.pt'
             )
+
+        # Generate and save test predictions
+        test_and_save_predictions(
+            model, test_loader, device,
+            checkpoint_dir / f'e2e_epoch{epoch}.csv'
+        )
 
     writer.close()
 

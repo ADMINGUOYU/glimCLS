@@ -5,7 +5,7 @@ Calculates stage 2 text generation metrics (utility script)
 
 """
 
-PATH_TO_STAGE2_CSV = '...'
+PATH_TO_STAGE2_CSV = '/mnt/afs/250010218/glimCLS/logs/stage2_LR_2e-4_5e-5_MTV_ei_prompt/lora_20260114_150748/checkpoints/model-epoch01-loss2.9709-tracking0.2456.csv'
 PATH_TO_VARIANTS = './data/zuco_preprocessed_dataframe/zuco_label_8variants.df'
 
 VARIANT_KEYS = \
@@ -22,9 +22,13 @@ import torch
 import pandas as pd
 from tqdm import tqdm
 from typing import List, Dict
+import matplotlib.pyplot as plt
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+os.environ["HF_HOME"] = "/mnt/afs/250010218/hf_cache"
+os.environ["TRANSFORMERS_CACHE"] = "/mnt/afs/250010218/hf_cache"
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
 # Import torchmetrics for evaluation (following GLIM approach)
 from torchmetrics.functional.text import bleu_score, rouge_score, word_error_rate
@@ -322,5 +326,19 @@ for input, pred in zip(inputs, preds):
     prediction_dict_list.append({'target' : input, 'prediction' : pred})
 
 # Calculate metrics
-compute_metrics(prediction_dict_list)
-compute_retrieval_metrics(prediction_dict_list, device = DEVICE)
+# compute_metrics(prediction_dict_list)
+
+index = []
+results = []
+for i in range(1, 601, 20):
+    ret = compute_retrieval_metrics(prediction_dict_list, device = DEVICE, top_k=[1], rand_grp=i, rand_btsz=2)
+    results.append(ret['retrieval_acc_top01'])
+    index.append(i)
+
+# Plot index and results
+plt.figure(figsize=(10, 6))
+plt.plot(index, results, marker='o')
+plt.title('Top 1 acc <-> Number of Random Groups')
+plt.xlabel('Number of Random Groups')
+plt.ylabel('Top 1 Accuracy')
+plt.savefig('./inference/retrieval_acc_top1_vs_rand_groups.png')

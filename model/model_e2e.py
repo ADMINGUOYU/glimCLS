@@ -17,6 +17,7 @@ class GLIM_Stage2_E2E(nn.Module):
         self.use_align_loss = loss_config['use_align_loss']
         self.use_aux_loss = loss_config['use_aux_loss']
         self.w_align = loss_config.get('w_align', 0.1)
+        self.w_llm = loss_config.get('w_llm', 1.0)
         self.w_sentiment = loss_config.get('w_sentiment', 0.25)
         self.w_topic = loss_config.get('w_topic', 0.25)
         self.w_length = loss_config.get('w_length', 0.25)
@@ -49,6 +50,10 @@ class GLIM_Stage2_E2E(nn.Module):
                          if 'text_model' not in k and 'tokenizer' not in k}
 
         stage1.load_state_dict(state_dict, strict=False)
+
+        # Initialize tokenizer and text_model if using alignment losses
+        if use_align_loss:
+            stage1.setup('fit')
 
         # Manually load regression statistics buffers if they exist
         if 'length_mean' in state_dict:
@@ -84,7 +89,7 @@ class GLIM_Stage2_E2E(nn.Module):
         )
 
         # Compute total loss
-        total_loss = loss_llm
+        total_loss = self.w_llm * loss_llm
         losses = {'loss_llm': loss_llm}
 
         if self.use_align_loss:

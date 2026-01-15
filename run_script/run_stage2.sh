@@ -35,11 +35,11 @@ TOPIC_LABELS=("Biographies and Factual Knowledge" "Movie Reviews and Sentiment")
 
 # Model Architecture
 TEXT_MODEL="google/flan-t5-large"
-FREEZE_STRATEGY="full_trainable_llm"  # Options: "lora" or "full_freeze_llm" or "full_trainable_llm"
+FREEZE_STRATEGY="lora"  # Options: "lora" or "full_freeze_llm" or "full_trainable_llm"
 LORA_RANK=8
 
 # T5 prompt type
-PROMPT_TYPE=length_sentiment_topic
+PROMPT_TYPE=default
 
 # Attention Mask Strategy
 ATTENTION_MASK_TYPE="bidirectional"  # Options: "bidirectional" or "causal"
@@ -54,7 +54,7 @@ ZI_DROP_PROB=-1.0
 USE_PROJECTOR=true  # Set to false to disable trainable projection layer
 
 # Use metadata (prompts: dataset, task, subject)
-USE_METADATA=true
+USE_METADATA=false
 
 # Label Embedding Initialization (Optional)
 # Leave empty ("") to use random initialization
@@ -73,8 +73,8 @@ WEIGHT_DECAY=0.01
 DEVICE="cuda:0"
 
 # Logging
-LOG_DIR="./logs/stage2_LR_2e-4_5e-5_MTV_ei_prompt"
-EXPERIMENT_NAME="fulltrain"
+LOG_DIR="./logs/stage2_LRVAR_NoMTV_noprompt"
+EXPERIMENT_NAME="lora_LR_2e-4_5e-5"
 
 # ============================================================================
 
