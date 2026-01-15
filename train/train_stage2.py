@@ -101,6 +101,12 @@ def parse_args():
         default=['Biographies and Factual Knowledge', 'Movie Reviews and Sentiment'],
         help='Topic label names (space-separated)'
     )
+    parser.add_argument(
+        '--train_Zi_drop_prob',
+        type=float,
+        default=-1.0,
+        help='Rate to drop Zi when training (default to -1, if number < 0, will not drop)'
+    )
 
     # Model arguments
     parser.add_argument(
@@ -472,6 +478,7 @@ def main():
     print(f"LoRA rank: {args.lora_rank}")
     print(f"Attention mask type: {args.attention_mask_type}")
     print(f"Use global EEG (ei): {args.use_ei}")
+    print(f"Zi drop prob ( < 0 no drop ): {args.train_Zi_drop_prob}")
     print(f"Use projection layer: {args.use_projector}")
     if args.use_projector:
         print(f"Projection layer LR: {args.proj_lr}")
@@ -494,7 +501,8 @@ def main():
             batch_size=args.batch_size,
             sentiment_labels=args.sentiment_labels,
             topic_labels=args.topic_labels,
-            num_workers=args.num_workers
+            num_workers=args.num_workers,
+            train_Zi_drop_prob=(args.train_Zi_drop_prob if args.train_Zi_drop_prob >= 0 else None)
         )
     else:
         # Use mock dataset

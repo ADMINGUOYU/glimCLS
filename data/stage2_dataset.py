@@ -12,7 +12,7 @@ TOPIC_LABELS = ['Biographies and Factual Knowledge', 'Movie Reviews and Sentimen
 
 # These files are required to use MTV in stage 2
 # Set PATH_TO_VARIANTS to None to skip
-PATH_TO_VARIANTS = '/mnt/afs/250010218/glimCLS/data/zuco_preprocessed_dataframe/zuco_label_8variants.df'
+PATH_TO_VARIANTS = None # '/mnt/afs/250010218/glimCLS/data/zuco_preprocessed_dataframe/zuco_label_8variants.df'
 VARIANT_KEYS = \
     ['lexical simplification (v0)', 'lexical simplification (v1)',
     'semantic clarity (v0)', 'semantic clarity (v1)',
@@ -36,7 +36,8 @@ class Stage2ReconstructionDataset(Dataset):
         df: pd.DataFrame,
         sentiment_labels: Optional[List[str]] = None,
         topic_labels: Optional[List[str]] = None,
-        use_noise: bool = False
+        use_noise: bool = False,
+        Zi_drop_prob: float = None
     ):
         """
         Args: 
@@ -56,6 +57,9 @@ class Stage2ReconstructionDataset(Dataset):
             use_noise: Whether to yield noise for ei and Zi (set dataframe ei and Zi)
         """
         self.df = df.reset_index(drop=True)
+
+        # Set Zi dropping rate
+        self.Zi_drop_prob = Zi_drop_prob
         
         # Set up label mappings
         self.sentiment_labels = sentiment_labels or SENTIMENT_LABELS
@@ -149,6 +153,11 @@ class Stage2ReconstructionDataset(Dataset):
             Zi = torch.from_numpy(Zi) if not isinstance(Zi, torch.Tensor) else Zi
         else: 
             Zi = torch.tensor(Zi)
+
+        # Drop Zi if needed
+        if self.Zi_drop_prob is not None:
+            if np.random.rand() < self.Zi_drop_prob:
+                Zi = torch.rand_like(Zi)
         
         # Ensure correct dtype
         ei = ei.float()
@@ -208,7 +217,8 @@ def create_stage2_dataloaders(
     batch_size: int = 8,
     sentiment_labels: Optional[List[str]] = None,
     topic_labels: Optional[List[str]] = None,
-    num_workers: int = 0
+    num_workers: int = 0,
+    train_Zi_drop_prob: float = None
 ) -> Tuple[DataLoader, DataLoader, DataLoader]:
     """
     Create train/val/test dataloaders from a pandas DataFrame.
@@ -290,7 +300,7 @@ def create_stage2_dataloaders(
         df_train = df_train.rename(columns={'input text_new': 'input text'})
     
     # Create datasets
-    train_dataset = Stage2ReconstructionDataset(df_train, sentiment_labels, topic_labels)
+    train_dataset = Stage2ReconstructionDataset(df_train, sentiment_labels, topic_labels, Zi_drop_prob = train_Zi_drop_prob)
     val_dataset = Stage2ReconstructionDataset(df_val, sentiment_labels, topic_labels, use_noise = USE_NOISE_EVAL)
     test_dataset = Stage2ReconstructionDataset(df_test, sentiment_labels, topic_labels, use_noise = USE_NOISE_TEST)
     

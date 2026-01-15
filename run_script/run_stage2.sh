@@ -47,6 +47,9 @@ ATTENTION_MASK_TYPE="bidirectional"  # Options: "bidirectional" or "causal"
 # Global EEG Feature
 USE_EI=true  # Set to false to disable global EEG feature
 
+# Zi EEG Feature (negative as no drop)
+ZI_DROP_PROB=-1.0
+
 # Projection Layer
 USE_PROJECTOR=true  # Set to false to disable trainable projection layer
 
@@ -82,6 +85,7 @@ echo "  Freeze Strategy: $FREEZE_STRATEGY"
 echo "  LoRA Rank: $LORA_RANK"
 echo "  Attention Mask Type: $ATTENTION_MASK_TYPE"
 echo "  Use Global EEG (ei): $USE_EI"
+echo "  Zi Drop prob ( < 0 no drop ): $ZI_DROP_PROB"
 echo "  Use Projection Layer: $USE_PROJECTOR"
 if [ "$USE_PROJECTOR" = true ]; then
     echo "  Projector LR: $PROJECTOR_LR"
@@ -129,7 +133,8 @@ CMD="python -m train.train_stage2 \
     --log_dir \"$LOG_DIR\" \
     --experiment_name \"$EXPERIMENT_NAME\" \
     --seed $SEED \
-    --prompt_type \"$PROMPT_TYPE\"" \
+    --prompt_type \"$PROMPT_TYPE\" \
+    --train_Zi_drop_prob $ZI_DROP_PROB" \
 
 # Add use_ei flag
 if [ "$USE_EI" = true ]; then
