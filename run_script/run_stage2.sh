@@ -35,7 +35,7 @@ TOPIC_LABELS=("Biographies and Factual Knowledge" "Movie Reviews and Sentiment")
 
 # Model Architecture
 TEXT_MODEL="google/flan-t5-large"
-FREEZE_STRATEGY="lora"  # Options: "lora" or "full_freeze_llm" or "full_trainable_llm"
+FREEZE_STRATEGY="full_freeze_llm"  # Options: "lora" or "full_freeze_llm" or "full_trainable_llm"
 LORA_RANK=8
 
 # T5 prompt type
@@ -64,7 +64,7 @@ LABEL_EMBED_INIT=""
 # Training
 MAX_EPOCHS=15
 PROJECTOR_LR=2e-4
-LR=5e-5
+LR=2e-4
 MIN_LR=1e-6
 WARMUP_EPOCHS=3
 WEIGHT_DECAY=0.01
@@ -73,8 +73,8 @@ WEIGHT_DECAY=0.01
 DEVICE="cuda:0"
 
 # Logging
-LOG_DIR="./logs/stage2_LRVAR_NoMTV_noprompt"
-EXPERIMENT_NAME="lora_LR_2e-4_5e-5"
+LOG_DIR="./logs/stage2_LR_2e-4_MTV_freeze_noprompt_replica"
+EXPERIMENT_NAME="freeze"
 
 # ============================================================================
 

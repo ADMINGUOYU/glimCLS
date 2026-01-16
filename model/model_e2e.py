@@ -138,6 +138,8 @@ class GLIM_Stage2_E2E(nn.Module):
         """Compute Stage 1 alignment losses (CLIP + Commitment)."""
         # Encode text
         input_ids, input_mask = self.stage1.tokenize(batch['input text'], self.stage1.input_text_len)
+        input_ids = input_ids.to(self.device)
+        input_mask = input_mask.to(self.device)
         input_text_embeds, hidden_text_mask = self.stage1.encode_text(input_ids, input_mask)
 
         # Compute alignment losses

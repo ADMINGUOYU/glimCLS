@@ -12,14 +12,14 @@ FREEZE_STAGE1=false
 # Stage 2 Configuration
 TEXT_MODEL="google/flan-t5-large"
 MODEL_CACHE_DIR="/mnt/afs/250010218/hf_cache"
-FREEZE_STRATEGY="full_trainable_llm" #options: "lora" or "full_freeze_llm" or "full_trainable_llm"
+FREEZE_STRATEGY="full_freeze_llm" #options: "lora" or "full_freeze_llm" or "full_trainable_llm"
 LORA_RANK=8
 USE_EI=true
 USE_PROJECTOR=true
 PROMPT_TYPE="default"
 
 # Loss Configuration
-USE_ALIGN_LOSS=true  # Disable to save memory
+USE_ALIGN_LOSS=false  # Disable to save memory
 W_ALIGN=0.2
 USE_AUX_LOSS=true     # Enable auxiliary losses
 # LLM loss weight

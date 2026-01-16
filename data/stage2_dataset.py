@@ -12,7 +12,7 @@ TOPIC_LABELS = ['Biographies and Factual Knowledge', 'Movie Reviews and Sentimen
 
 # These files are required to use MTV in stage 2
 # Set PATH_TO_VARIANTS to None to skip
-PATH_TO_VARIANTS = None # '/mnt/afs/250010218/glimCLS/data/zuco_preprocessed_dataframe/zuco_label_8variants.df'
+PATH_TO_VARIANTS = '/mnt/afs/250010218/glimCLS/data/zuco_preprocessed_dataframe/zuco_label_8variants.df'
 VARIANT_KEYS = \
     ['lexical simplification (v0)', 'lexical simplification (v1)',
     'semantic clarity (v0)', 'semantic clarity (v1)',
