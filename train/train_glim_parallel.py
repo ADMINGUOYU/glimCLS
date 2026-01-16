@@ -274,6 +274,30 @@ def parse_args():
         help='Validation batch size'
     )
     parser.add_argument(
+        '--spectral_whitening',
+        action='store_true',
+        default=True,
+        help='Apply spectral whitening to EEG signals'
+    )
+    parser.add_argument(
+        '--no_spectral_whitening',
+        action='store_false',
+        dest='spectral_whitening',
+        help='Disable spectral whitening'
+    )
+    parser.add_argument(
+        '--robust_normalize',
+        action='store_true',
+        default=True,
+        help='Apply robust normalization to EEG signals'
+    )
+    parser.add_argument(
+        '--no_robust_normalize',
+        action='store_false',
+        dest='robust_normalize',
+        help='Disable robust normalization'
+    )
+    parser.add_argument(
         '--max_epochs',
         type=int,
         default=50,
@@ -651,7 +675,9 @@ def main():
         use_weighted_sampler=use_weighted_sampler,
         classification_label_keys=['sentiment label', 'topic_label'],
         regression_label_keys=regression_tasks,
-        use_zuco1_only=args.use_zuco1_only
+        use_zuco1_only=args.use_zuco1_only,
+        use_spectral_whitening=args.spectral_whitening,
+        use_robust_normalize=args.robust_normalize
     )
 
     if is_main_process():
@@ -661,7 +687,8 @@ def main():
             print("Weighted sampling disabled (incompatible with DDP)")
 
     # Display distribution of labels
-    display_label_distributions(datamodule, classification_tasks)
+    # !!! Commented out to reduce RAM consumption during training
+    # display_label_distributions(datamodule, classification_tasks)
 
     if is_main_process():
         print("\nInitializing GLIM_PARALLEL model...")

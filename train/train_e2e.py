@@ -2,6 +2,7 @@ import os
 import sys
 import atexit
 import argparse
+import shutil
 import torch
 from datetime import datetime
 from pathlib import Path
@@ -90,6 +91,10 @@ def parse_args():
     parser.add_argument('--eeg_data_path', required=True, help='Path to EEG dataframe')
     parser.add_argument('--labels_data_path', required=True, help='Path to labels dataframe')
     parser.add_argument('--use_mtv', action='store_true', help='Use MTV for training data augmentation')
+    parser.add_argument('--spectral_whitening', action='store_true', default=True, help='Apply spectral whitening')
+    parser.add_argument('--no_spectral_whitening', action='store_false', dest='spectral_whitening')
+    parser.add_argument('--robust_normalize', action='store_true', default=True, help='Apply robust normalization')
+    parser.add_argument('--no_robust_normalize', action='store_false', dest='robust_normalize')
     parser.add_argument('--batch_size', type=int, default=24, help='Batch size')
     parser.add_argument('--num_workers', type=int, default=4, help='Number of workers')
 
@@ -267,6 +272,13 @@ def main():
     log_dir = Path(args.log_dir) / f"{args.experiment_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     log_dir.mkdir(parents=True, exist_ok=True)
 
+    # Save the bash script for reproducibility
+    bash_script_path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                                    'run_script', 'run_e2e.sh')
+    if os.path.exists(bash_script_path):
+        shutil.copy2(bash_script_path, os.path.join(log_dir, 'run_e2e.sh'))
+        print(f"Saved training script to: {os.path.join(log_dir, 'run_e2e.sh')}")
+
     sys.stdout = TeeLogger(log_dir / 'training.log', sys.stdout)
     sys.stderr = TeeLogger(log_dir / 'training_error.log', sys.stderr)
 
@@ -279,6 +291,8 @@ def main():
         eeg_data_path=args.eeg_data_path,
         labels_data_path=args.labels_data_path,
         use_mtv=args.use_mtv,
+        spectral_whitening=args.spectral_whitening,
+        robust_normalize=args.robust_normalize,
         batch_size=args.batch_size,
         num_workers=args.num_workers
     )

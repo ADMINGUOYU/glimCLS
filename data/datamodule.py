@@ -9,9 +9,15 @@ import torch.distributed as dist
 from typing import Literal, Iterator, Union
 from torch.utils.data import Dataset, DataLoader, DistributedSampler
 
+from preprocess.signal_process.functions import spectral_whitening, robust_normalize_padded
+
 # Constants
 SBERT_EMBEDDING_DIM = 768  # Dimension of SBERT (all-mpnet-base-v2) embeddings
 MAX_KEYWORDS = 3  # Number of top keywords to extract per sentence
+
+# Macros for signal preprocessing
+SPECTRAL_WHITENING = True
+ROBUST_NORMALIZE = True
 
 # classification label
 CLS_LABEL = 'topic_label'
@@ -32,6 +38,8 @@ class GLIMDataModule(pl.LightningDataModule):
                  classification_label_keys: list = None,
                  regression_label_keys: list = None,
                  use_zuco1_only: bool = False,
+                 use_spectral_whitening: bool = SPECTRAL_WHITENING,
+                 use_robust_normalize: bool = ROBUST_NORMALIZE,
                  ):
         super().__init__()
         assert os.path.exists(data_path)
@@ -45,6 +53,8 @@ class GLIMDataModule(pl.LightningDataModule):
         self.num_workers = num_workers
         self.use_weighted_sampler = use_weighted_sampler
         self.use_zuco1_only = use_zuco1_only
+        self.use_spectral_whitening = use_spectral_whitening
+        self.use_robust_normalize = use_robust_normalize
 
         # Handle both single and multi-task modes
         if classification_label_keys is not None:
@@ -81,11 +91,11 @@ class GLIMDataModule(pl.LightningDataModule):
             print(f'[Rank {local_rank}] Loaded embeddings from {self.embeddings_path}')
         
         if stage == "fit":
-            self.train_set = ZuCoDataset(df, 'train', embeddings_dict=embeddings_dict, classification_label_keys=self.classification_label_keys, regression_label_keys=self.regression_label_keys)
-            self.val_set = ZuCoDataset(df, 'val', embeddings_dict=embeddings_dict, eval_noise_input=self.eval_noise_input, classification_label_keys=self.classification_label_keys, regression_label_keys=self.regression_label_keys)
+            self.train_set = ZuCoDataset(df, 'train', embeddings_dict=embeddings_dict, classification_label_keys=self.classification_label_keys, regression_label_keys=self.regression_label_keys, use_spectral_whitening=self.use_spectral_whitening, use_robust_normalize=self.use_robust_normalize)
+            self.val_set = ZuCoDataset(df, 'val', embeddings_dict=embeddings_dict, eval_noise_input=self.eval_noise_input, classification_label_keys=self.classification_label_keys, regression_label_keys=self.regression_label_keys, use_spectral_whitening=self.use_spectral_whitening, use_robust_normalize=self.use_robust_normalize)
             self.n_target_text = self.val_set.n_target_text
         elif stage == "test":
-            self.test_set = ZuCoDataset(df, 'test', embeddings_dict=embeddings_dict, eval_noise_input=self.eval_noise_input, classification_label_keys=self.classification_label_keys, regression_label_keys=self.regression_label_keys)
+            self.test_set = ZuCoDataset(df, 'test', embeddings_dict=embeddings_dict, eval_noise_input=self.eval_noise_input, classification_label_keys=self.classification_label_keys, regression_label_keys=self.regression_label_keys, use_spectral_whitening=self.use_spectral_whitening, use_robust_normalize=self.use_robust_normalize)
             self.n_target_text = self.test_set.n_target_text
         print(f'[Rank {local_rank}][{self.__class__.__name__}] running `setup()`...Done!','\U0001F60B'*3)
             
@@ -396,8 +406,14 @@ class ZuCoDataset(Dataset):
                  eval_noise_input: bool = False,
                  classification_label_key: str = None,
                  classification_label_keys: list = None,
-                 regression_label_keys: list = None
+                 regression_label_keys: list = None,
+                 use_spectral_whitening: bool = False,
+                 use_robust_normalize: bool = False,
                  ):
+        
+        # spectral whitening and robust normalization flags
+        self.use_spectral_whitening = use_spectral_whitening
+        self.use_robust_normalize = use_robust_normalize
 
         # Handle both single and multi-task modes
         if classification_label_keys is not None:
@@ -462,6 +478,16 @@ class ZuCoDataset(Dataset):
         prompt = list(zip(t_prompts, d_prompts, s_prompts))
         text_uid = df['text uid'].values.tolist()
 
+        # Process Whiteing and Normalization
+        # Don't process in __getitem__, to avoid redundant processing during sampling
+        if self.use_spectral_whitening and self.use_robust_normalize:
+            df.loc[:, 'eeg'] = df['eeg'].apply(lambda x: robust_normalize_padded(spectral_whitening(x)))
+        elif self.use_spectral_whitening:
+            df.loc[:, 'eeg'] = df['eeg'].apply(spectral_whitening)
+        elif self.use_robust_normalize:
+            df.loc[:, 'eeg'] = df['eeg'].apply(robust_normalize_padded)
+
+        # Load EEG and mask
         eeg = df['eeg'].tolist()
         mask = df['mask'].tolist()
 

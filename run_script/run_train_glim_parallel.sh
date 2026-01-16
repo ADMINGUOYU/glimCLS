@@ -21,13 +21,16 @@ USE_ZUCO1_ONLY=false
 USE_CHANNEL_WEIGHTS=true
 
 USE_SCALED_LR=true          # Scale LR by number of GPUs in multi-GPU training
-USE_PER_GPU_BATCH_SIZE=false # Treat BATCH_SIZE as per-GPU (global = BATCH_SIZE × num_gpus)
+USE_PER_GPU_BATCH_SIZE=true # Treat BATCH_SIZE as per-GPU (global = BATCH_SIZE × num_gpus)
 USE_CLASS_WEIGHTS=false     # Enable per-class loss weighting based on inverse frequency
-
 
 
 # Data
 DATA_PATH="data/ZUCO1-2_FOR_GLIMCLS/zuco_merged_with_variants.df"
+
+# Signal preprocessing
+SPECTRAL_WHITENING=true  # Apply spectral whitening to EEG signals
+ROBUST_NORMALIZE=true    # Apply robust normalization to EEG signals
 
 # Classification tasks
 SENTIMENT_LABELS=("non_neutral" "neutral")
@@ -68,8 +71,7 @@ SURPRISAL_LOSS_WEIGHT=0.3
 # Example: 32 per GPU × 8 GPUs = 256 global batch size
 BATCH_SIZE=72
 VAL_BATCH_SIZE=24
-
-MAX_EPOCHS=100
+MAX_EPOCHS=50
 
 
 # Base learning rate for single GPU
@@ -99,7 +101,7 @@ NUM_WORKERS=4
 
 
 # Logging
-LOG_DIR="./logs"
+LOG_DIR="./logs/stage1_normalized"
 EXPERIMENT_NAME="glim_parallel"
 
 # ============================================================================
@@ -152,6 +154,8 @@ python -m train.train_glim_parallel \
     $([ "$USE_SCALED_LR" = true ] && echo "--use_scaled_lr") \
     $([ "$USE_PER_GPU_BATCH_SIZE" = true ] && echo "--use_per_gpu_batch_size") \
     $([ "$USE_CLASS_WEIGHTS" = true ] && echo "--use_class_weights") \
+    $([ "$SPECTRAL_WHITENING" = false ] && echo "--no_spectral_whitening") \
+    $([ "$ROBUST_NORMALIZE" = false ] && echo "--no_robust_normalize") \
     ${MODEL_CACHE_DIR:+--model_cache_dir "$MODEL_CACHE_DIR"}
 
 # Optional flags (uncomment as needed):

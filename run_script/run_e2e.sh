@@ -42,6 +42,8 @@ MIN_LR=1e-6
 EEG_DATA_PATH="./data/ZUCO1-2_FOR_GLIMCLS/zuco_merged_with_variants.df"
 LABELS_DATA_PATH="./data/zuco_preprocessed_dataframe/zuco2best.df"
 USE_MTV=true  # Enable MTV for 8x training data augmentation
+SPECTRAL_WHITENING=true  # Apply spectral whitening to EEG signals
+ROBUST_NORMALIZE=true    # Apply robust normalization to EEG signals
 BATCH_SIZE=24
 NUM_WORKERS=4
 
@@ -101,6 +103,14 @@ fi
 
 if [ "$USE_MTV" = true ]; then
     CMD="$CMD --use_mtv"
+fi
+
+if [ "$SPECTRAL_WHITENING" = false ]; then
+    CMD="$CMD --no_spectral_whitening"
+fi
+
+if [ "$ROBUST_NORMALIZE" = false ]; then
+    CMD="$CMD --no_robust_normalize"
 fi
 
 if [ -n "$MODEL_CACHE_DIR" ]; then

@@ -87,7 +87,7 @@ def spectral_whitening(eeg_data, alpha=0.95):
 
 
 
-def plot_eeg(eeg_sample, save_dir,label=None):
+def plot_eeg(eeg_sample, save_dir,label=None,fs=128):
     eeg_sample=eeg_sample.T
     # Plot parameters
     offset_scale = 15.0
@@ -113,7 +113,6 @@ def plot_eeg(eeg_sample, save_dir,label=None):
     ax1.invert_yaxis()
 
     # Right subplot: Frequency map (spectrogram of averaged channels)
-    fs = 128  # Sampling rate in Hz
     avg_signal = np.mean(eeg_sample, axis=1)
     f, t, Sxx = signal.spectrogram(avg_signal, fs=fs, nperseg=128)
 

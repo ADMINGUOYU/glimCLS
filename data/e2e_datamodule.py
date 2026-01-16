@@ -7,6 +7,11 @@ from typing import Literal
 from torch.utils.data import Dataset, DataLoader
 
 from data.datamodule import GLIMSampler
+from preprocess.signal_process.functions import spectral_whitening, robust_normalize_padded
+
+# Macros for signal preprocessing
+SPECTRAL_WHITENING = True
+ROBUST_NORMALIZE = True
 
 # MTV variant keys
 VARIANT_KEYS = [
@@ -24,6 +29,8 @@ class E2EDataModule(pl.LightningDataModule):
                  eeg_data_path: os.PathLike,
                  labels_data_path: os.PathLike,
                  use_mtv: bool = False,
+                 spectral_whitening: bool = SPECTRAL_WHITENING,
+                 robust_normalize: bool = ROBUST_NORMALIZE,
                  batch_size: int = 24,
                  num_workers: int = 0):
         super().__init__()
@@ -33,6 +40,8 @@ class E2EDataModule(pl.LightningDataModule):
         self.eeg_data_path = eeg_data_path
         self.labels_data_path = labels_data_path
         self.use_mtv = use_mtv
+        self.spectral_whitening = spectral_whitening
+        self.robust_normalize = robust_normalize
         self.batch_size = batch_size
         self.num_workers = num_workers
 
@@ -69,13 +78,19 @@ class E2EDataModule(pl.LightningDataModule):
             print(f'  Train samples: {len(train_df)}')
             print(f'  Val samples: {len(val_df)}')
 
-            self.train_set = E2EDataset(train_df, 'train', self.use_mtv, VARIANT_KEYS)
-            self.val_set = E2EDataset(val_df, 'val', False, [])
+            self.train_set = E2EDataset(train_df, 'train', self.use_mtv, VARIANT_KEYS, 
+                                        use_spectral_whitening=self.spectral_whitening, 
+                                        use_robust_normalize=self.robust_normalize)
+            self.val_set = E2EDataset(val_df, 'val', False, [],
+                                      use_spectral_whitening=self.spectral_whitening, 
+                                      use_robust_normalize=self.robust_normalize)
 
         elif stage == "test":
             test_df = df[df['phase'] == 'test'].copy()
             print(f'  Test samples: {len(test_df)}')
-            self.test_set = E2EDataset(test_df, 'test', False, [])
+            self.test_set = E2EDataset(test_df, 'test', False, [],
+                                       use_spectral_whitening=self.spectral_whitening, 
+                                       use_robust_normalize=self.robust_normalize)
 
         print(f'[E2EDataModule] Setup complete!')
 
@@ -129,6 +144,8 @@ class E2EDataset(Dataset):
                  df: pd.DataFrame,
                  phase: Literal['train', 'val', 'test'],
                  use_mtv: bool,
+                 use_spectral_whitening: bool,
+                 use_robust_normalize: bool,
                  variant_keys: list):
         self.phase = phase
 
@@ -159,6 +176,15 @@ class E2EDataset(Dataset):
         else:
             # Use input text as target text
             df['target text'] = df['input text']
+
+        # Whitening and normalization (if both enabled, whiten first)
+        # Use .loc to avoid SettingWithCopyWarning
+        if use_spectral_whitening and use_robust_normalize:
+            df.loc[:, 'eeg'] = df['eeg'].apply(lambda x: robust_normalize_padded(spectral_whitening(x)))
+        elif use_spectral_whitening:
+            df.loc[:, 'eeg'] = df['eeg'].apply(spectral_whitening)
+        elif use_robust_normalize:
+            df.loc[:, 'eeg'] = df['eeg'].apply(robust_normalize_padded)
 
         # Extract data
         self.data = {
